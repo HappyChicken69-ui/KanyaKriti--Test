@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    background-color: #FAF7F5;
+    color: #2D2527;
+  }
+  .font-serif {
+    font-family: 'Playfair Display', 'Rozha One', Georgia, serif;
+  }
+}
+
+/* =========================================================
+   GLOBAL LEAFLET MAP STACKING & LAYER CONSTRAINTS
+   Ensures Leaflet maps and all internal panes/controls NEVER
+   appear above modals, dialogs, drawers, dropdowns, or auth overlays.
+   ========================================================= */
+
+.leaflet-container {
+  position: relative !important;
+  z-index: 0 !important;
+  isolation: isolate !important;
+}
+
+/* Ensure Leaflet controls (zoom buttons, attribution, etc.) do not exceed z-index 10 */
+.leaflet-top,
+.leaflet-bottom,
+.leaflet-control {
+  z-index: 10 !important;
+}
+
+/* Constrain all internal Leaflet panes to internal local layers (1 to 6) */
+.leaflet-pane {
+  z-index: 1 !important;
+}
+
+.leaflet-tile-pane {
+  z-index: 1 !important;
+}
+
+.leaflet-overlay-pane {
+  z-index: 2 !important;
+}
+
+.leaflet-shadow-pane {
+  z-index: 3 !important;
+}
+
+.leaflet-marker-pane {
+  z-index: 4 !important;
+}
+
+.leaflet-tooltip-pane {
+  z-index: 5 !important;
+}
+
+.leaflet-popup-pane {
+  z-index: 6 !important;
+}

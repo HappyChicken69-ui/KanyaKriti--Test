@@ -1,0 +1,11 @@
+{
+  "name": "KanyaKriti",
+  "description": "Voice-first hyperlocal AI commerce platform empowering women artisans in India to convert spoken skills into shoppable listings and connect with nearby buyers.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
