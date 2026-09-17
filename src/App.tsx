@@ -21,6 +21,7 @@ import {
 } from './lib/api.ts';
 import { ShieldAlert, ArrowLeft, LogIn, Sparkles, CheckCircle2 } from 'lucide-react';
 import { useCurrentLocation } from './context/LocationContext.tsx';
+import { useLanguage } from './context/LanguageContext.tsx';
 
 export type AppView = 'home' | 'artisan' | 'buyer' | 'runner' | 'admin';
 
@@ -80,6 +81,7 @@ const DEMO_PERSONAS: Record<'artisan' | 'buyer' | 'runner' | 'admin', User> = {
 };
 
 export function App() {
+  const { t, resetLanguage } = useLanguage();
   // Demo Mode is OFF by default for every new session/user
   const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
   const [activeRoleView, setActiveRoleView] = useState<AppView>('home');
@@ -253,18 +255,19 @@ export function App() {
 
   const handleLogout = async () => {
     await logoutUser();
+    resetLanguage();
     setCurrentUser(null);
     setIsRealAuthSession(false);
     setIsDemoMode(false);
     setActiveRoleView('home');
-    showToast('Logged out successfully.');
+    showToast(t('toast_logged_out', 'Logged out successfully.'));
   };
 
   const handleResetDemo = async () => {
     try {
       await resetDemo();
       await loadAllData();
-      showToast('Database reset to initial demo state');
+      showToast(t('toast_demo_reset', 'Database reset to initial demo state'));
     } catch (err) {
       alert('Failed to reset demo data');
     }
@@ -295,16 +298,21 @@ export function App() {
     };
 
   // Role Security Check for UI Rendering
-  // An authenticated BUYER must not be able to access artisan/runner/admin views
+  // An authenticated user must not access internal role views that don't belong to them:
+  // - Buyers cannot access artisan, runner, or admin dashboards.
+  // - Artisans cannot access runner or admin dashboards.
+  // - Runners cannot access artisan or admin dashboards.
+  // - All authenticated users are permitted to browse the Marketplace ('buyer' view) or 'home'.
   const isUnauthorizedRole =
     activeRoleView !== 'home' &&
+    activeRoleView !== 'buyer' &&
     !isDemoMode &&
     isRealAuthSession &&
     currentUser &&
     currentUser.role?.toLowerCase() !== activeRoleView;
 
   return (
-    <div className="min-h-screen bg-[#FAF7F5] text-stone-900 font-sans flex flex-col">
+    <div className="min-h-screen bg-[#FCECEF] text-stone-900 font-sans flex flex-col">
       {/* Toast Notification Alert */}
       {toastMessage && (
         <div

@@ -44,15 +44,8 @@ export function getGroqClient(): Groq | null {
 
 export const ExtractedSkillSchema = z.object({
   skill: z.string().min(1, 'Skill title is required'),
-  category: z.enum([
-    'Tailoring',
-    'Cooking',
-    'Alterations',
-    'Handicrafts',
-    'Embroidery',
-    'Beauty',
-    'Other',
-  ]),
+  category: z.string().min(1, 'Category is required'),
+  customCategory: z.string().optional(),
   description: z.string().min(1, 'Description is required'),
   price: z.number().min(0, 'Price must be non-negative'),
   currency: z.literal('INR'),
@@ -68,15 +61,8 @@ export const ExtractedSkillSchema = z.object({
 export const GeneratedListingSchema = z.object({
   title: z.string().min(1, 'Title is required'),
   shortDescription: z.string().min(1, 'Short description is required'),
-  category: z.enum([
-    'Tailoring',
-    'Cooking',
-    'Alterations',
-    'Handicrafts',
-    'Embroidery',
-    'Beauty',
-    'Other',
-  ]),
+  category: z.string().min(1, 'Category is required'),
+  customCategory: z.string().optional(),
   price: z.number().min(0, 'Price must be non-negative'),
   estimatedTurnaround: z.string().min(1),
   turnaroundHours: z.number().min(0),
@@ -90,7 +76,7 @@ export const GeneratedListingSchema = z.object({
 // (Active when GROQ_API_KEY is not configured)
 // ==========================================
 
-export function fallbackExtractSkill(spokenText: string): ExtractedSkillInfo {
+export function fallbackExtractSkill(spokenText: string, language?: string): ExtractedSkillInfo {
   const text = spokenText.toLowerCase();
 
   // Price extraction
@@ -158,7 +144,7 @@ export function fallbackExtractSkill(spokenText: string): ExtractedSkillInfo {
     turnaround_hours,
     turnaround_display,
     availability: true,
-    language: 'Indian Multilingual (Auto-detected)',
+    language: language ? `${language}` : 'Indian Multilingual (Auto-detected)',
     confidence,
     suggestedTitle: `Custom ${skill} – Verified Local Artisan`,
     suggestedTags,
@@ -173,6 +159,7 @@ export function fallbackGenerateListing(
     title: extracted.suggestedTitle || `${extracted.skill} – Local Maker`,
     shortDescription: `Authentic, reliable ${extracted.skill.toLowerCase()} crafted by ${artisanName}. High-quality finishing, punctual delivery, and personalized neighborhood service.`,
     category: extracted.category,
+    customCategory: extracted.customCategory,
     price: extracted.price,
     estimatedTurnaround: extracted.turnaround_display || 'Within 1-2 days',
     turnaroundHours: extracted.turnaround_hours,
@@ -198,7 +185,8 @@ export function fallbackGenerateListing(
 export async function transcribeAudioWithGroq(
   audioBuffer: Buffer,
   originalFilename: string = 'recording.webm',
-  mimeType: string = 'audio/webm'
+  mimeType: string = 'audio/webm',
+  language?: string
 ): Promise<string> {
   const client = getGroqClient();
 
@@ -213,7 +201,7 @@ export async function transcribeAudioWithGroq(
     const transcription = await client.audio.transcriptions.create({
       file,
       model: GROQ_CONFIG.sttModel,
-      language: 'en', // Whisper auto-detects multilingual/Indian accents
+      language: language || undefined, // Whisper auto-detects or uses passed language code
       response_format: 'json',
       temperature: 0.0,
     });
@@ -236,14 +224,15 @@ Analyze the spoken transcript from a local Indian artisan (often containing Engl
 You MUST output strict JSON conforming to this exact schema:
 {
   "skill": "Short title of skill/service (e.g. Blouse Alterations, Homestyle Punjabi Tiffin, Bridal Mehendi)",
-  "category": "Must be exactly one of: 'Tailoring' | 'Cooking' | 'Alterations' | 'Handicrafts' | 'Embroidery' | 'Beauty' | 'Other'",
+  "category": "Category name (e.g. 'Tailoring', 'Cooking', 'Alterations', 'Handicrafts', 'Embroidery', 'Beauty', or custom craft name)",
+  "customCategory": "Optional specific category if custom",
   "description": "Clear professional 1-2 sentence description",
   "price": number (in INR, must be >= 0, default 200 if not mentioned),
   "currency": "INR",
   "turnaround_hours": number (estimated turnaround in hours, e.g. 6 for same-day, 24 for 1 day, 48 for 2 days),
   "turnaround_display": "Human-readable string (e.g. 'Within 1 day', 'Same day')",
   "availability": true,
-  "language": "Detected language (e.g. Hindi, Hinglish, English)",
+  "language": "Detected language (e.g. Hindi, Hinglish, Bengali, Tamil, Telugu, English)",
   "confidence": number between 0.0 and 1.0 (reduce below 0.8 if vague or missing key info),
   "suggestedTitle": "Professional marketplace listing title",
   "suggestedTags": ["array", "of", "hashtags"]
@@ -254,14 +243,15 @@ Guidelines:
 - Do NOT make exaggerated claims (e.g., 'world's best', '100% magic').
 - Return ONLY valid JSON. No markdown ticks, no commentary outside JSON.`;
 
-export async function extractSkillWithGroq(spokenText: string): Promise<ExtractedSkillInfo> {
+export async function extractSkillWithGroq(spokenText: string, language?: string): Promise<ExtractedSkillInfo> {
   const client = getGroqClient();
   if (!client) {
     console.log('[Groq LLM] Running skill extraction in local mock mode (GROQ_API_KEY not configured).');
-    return fallbackExtractSkill(spokenText);
+    return fallbackExtractSkill(spokenText, language);
   }
 
-  const userPrompt = `Spoken input from artisan: "${spokenText}"\nExtract the structured skill profile according to the required schema. Return valid JSON only.`;
+  const langContext = language ? `\nLanguage hint: Artisan spoken language is ${language}.` : '';
+  const userPrompt = `Spoken input from artisan: "${spokenText}"${langContext}\nExtract the structured skill profile according to the required schema. Return valid JSON only.`;
 
   // Attempt 1: Standard structured call
   try {

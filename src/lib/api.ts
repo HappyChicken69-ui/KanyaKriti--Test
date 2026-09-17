@@ -259,9 +259,12 @@ export async function createListing(listingData: any): Promise<Listing> {
   return data.listing;
 }
 
-export async function transcribeAudioAI(audioBlob: Blob): Promise<string> {
+export async function transcribeAudioAI(audioBlob: Blob, languageCode?: string): Promise<string> {
   const formData = new FormData();
   formData.append('audio', audioBlob, 'recording.webm');
+  if (languageCode) {
+    formData.append('language', languageCode);
+  }
   const res = await fetch('/api/ai/transcribe', {
     method: 'POST',
     body: formData,
@@ -271,11 +274,11 @@ export async function transcribeAudioAI(audioBlob: Blob): Promise<string> {
   return data.transcript || '';
 }
 
-export async function extractSkillAI(spokenText: string): Promise<ExtractedSkillInfo> {
+export async function extractSkillAI(spokenText: string, language?: string): Promise<ExtractedSkillInfo> {
   const res = await fetch('/api/ai/extract-skill', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ spokenText }),
+    body: JSON.stringify({ spokenText, language }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Failed to extract skill');

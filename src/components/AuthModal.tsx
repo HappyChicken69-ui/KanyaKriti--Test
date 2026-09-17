@@ -35,6 +35,7 @@ import {
 import { User } from '../types.ts';
 import { useCurrentLocation } from '../context/LocationContext.tsx';
 import { SUPPORTED_LANGUAGES } from '../data/languages.ts';
+import { useLanguage } from '../context/LanguageContext.tsx';
 
 export type AuthViewMode =
   | 'role-select'
@@ -64,12 +65,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [mode, setMode] = useState<AuthViewMode>(initialMode);
   const [loginRoleTab, setLoginRoleTab] = useState<'artisan' | 'buyer' | 'runner' | 'admin'>('artisan');
 
+  // App-wide language context
+  const { selectedLanguage, setLanguageCode, supportedLanguages, t } = useLanguage();
+
   // Form State
   const [name, setName] = useState('');
   const [identifier, setIdentifier] = useState(''); // email or phone
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [preferredLanguage, setPreferredLanguage] = useState('Hindi');
+  const [preferredLanguage, setPreferredLanguage] = useState(selectedLanguage?.name || 'English');
   const { location } = useCurrentLocation();
   const [neighborhood, setNeighborhood] = useState('');
   const [vehicleType, setVehicleType] = useState('Electric Two-Wheeler');
@@ -78,6 +82,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [forgotSubmitted, setForgotSubmitted] = useState(false);
+
+  // Sync preferred language with app's single source of truth
+  useEffect(() => {
+    if (selectedLanguage?.name) {
+      setPreferredLanguage(selectedLanguage.name);
+    }
+  }, [selectedLanguage?.name]);
+
+  const handlePreferredLanguageChange = (langName: string) => {
+    setPreferredLanguage(langName);
+    const matched = supportedLanguages.find((l) => l.name === langName);
+    if (matched) {
+      setLanguageCode(matched.code);
+    }
+  };
 
   useEffect(() => {
     if (!neighborhood && location?.locality) {
@@ -458,10 +477,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <div className="space-y-5 text-center py-1">
               <div>
                 <h2 className="text-2xl sm:text-3xl font-black font-serif text-[#4A1525] tracking-tight">
-                  Welcome to KanyaKriti
+                  {t('auth_welcome', 'Welcome to KanyaKriti')}
                 </h2>
                 <p className="text-xs sm:text-sm text-stone-600 mt-1.5 font-normal">
-                  Choose how you'd like to join our community:
+                  {t('auth_select_role', "Choose how you'd like to join our community:")}
                 </p>
               </div>
 
@@ -484,10 +503,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       </div>
                     </div>
                     <h3 className="font-serif font-bold text-[#4A1525] text-base sm:text-lg group-hover:text-[#C84B68] transition-colors mt-3">
-                      I'm an Artisan
+                      {t('auth_artisan_role', "I'm an Artisan")}
                     </h3>
                     <p className="text-xs text-stone-600 mt-1 leading-relaxed">
-                      Share your skills and earn locally from home with voice listing.
+                      {t('auth_artisan_role_desc', 'Share your skills and earn locally from home with voice listing.')}
                     </p>
                   </div>
                   <div className="mt-4 pt-3 border-t border-rose-50 flex items-center gap-2 flex-wrap">
@@ -495,7 +514,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       Voice-First
                     </span>
                     <span className="text-[10px] text-stone-500 font-medium whitespace-nowrap">
-                      Zero typing needed
+                      {t('hero_stat_voice_desc', 'Zero typing needed')}
                     </span>
                   </div>
                 </button>
@@ -517,10 +536,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       </div>
                     </div>
                     <h3 className="font-serif font-bold text-[#4A1525] text-base sm:text-lg group-hover:text-[#C84B68] transition-colors mt-3">
-                      I'm a Buyer
+                      {t('auth_buyer_role', "I'm a Buyer")}
                     </h3>
                     <p className="text-xs text-stone-600 mt-1 leading-relaxed">
-                      Find authentic crafts and trusted women makers right in your neighborhood.
+                      {t('auth_buyer_role_desc', 'Find authentic crafts and trusted women makers right in your neighborhood.')}
                     </p>
                   </div>
                   <div className="mt-4 pt-3 border-t border-rose-50 flex items-center gap-2 flex-wrap">
@@ -550,10 +569,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       </div>
                     </div>
                     <h3 className="font-serif font-bold text-[#4A1525] text-base sm:text-lg group-hover:text-[#C84B68] transition-colors mt-3">
-                      I'm a Runner
+                      {t('auth_runner_role', "I'm a Runner")}
                     </h3>
                     <p className="text-xs text-stone-600 mt-1 leading-relaxed">
-                      Deliver neighborhood orders and earn flexible income with instant payouts.
+                      {t('auth_runner_role_desc', 'Deliver neighborhood orders and earn flexible income with instant payouts.')}
                     </p>
                   </div>
                   <div className="mt-4 pt-3 border-t border-rose-50 flex items-center gap-2 flex-wrap">
@@ -583,10 +602,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       </div>
                     </div>
                     <h3 className="font-serif font-bold text-[#4A1525] text-base sm:text-lg group-hover:text-[#C84B68] transition-colors mt-3">
-                      I'm an Admin
+                      {t('auth_admin_role', "I'm an Admin")}
                     </h3>
                     <p className="text-xs text-stone-600 mt-1 leading-relaxed">
-                      Oversee community health, verifications, platform metrics, and logistics.
+                      {t('auth_admin_role_desc', 'Oversee community health, verifications, platform metrics, and logistics.')}
                     </p>
                   </div>
                   <div className="mt-4 pt-3 border-t border-rose-50 flex items-center gap-2 flex-wrap">
@@ -602,7 +621,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
               {/* Already have an account? Section */}
               <div className="pt-4 border-t border-rose-100/90 text-xs text-stone-500 space-y-2">
-                <p className="font-medium text-stone-600">Already have an account?</p>
+                <p className="font-medium text-stone-600">{t('auth_switch_to_login', 'Already have an account?')}</p>
                 <div className="flex flex-wrap items-center justify-center gap-x-2 sm:gap-x-3 gap-y-1.5 font-medium">
                   <button
                     type="button"
@@ -610,7 +629,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     onClick={() => switchMode('artisan-login')}
                     className="text-[#C84B68] hover:text-[#86293D] font-bold underline underline-offset-4 cursor-pointer transition-colors"
                   >
-                    Artisan Login
+                    {t('nav_maker', 'Artisan')} {t('nav_login', 'Login')}
                   </button>
                   <span className="text-rose-200">•</span>
                   <button
@@ -619,7 +638,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     onClick={() => switchMode('buyer-login')}
                     className="text-[#C84B68] hover:text-[#86293D] font-bold underline underline-offset-4 cursor-pointer transition-colors"
                   >
-                    Buyer Login
+                    {t('nav_buyer', 'Buyer')} {t('nav_login', 'Login')}
                   </button>
                   <span className="text-rose-200">•</span>
                   <button
@@ -628,7 +647,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     onClick={() => switchMode('runner-login')}
                     className="text-[#C84B68] hover:text-[#86293D] font-bold underline underline-offset-4 cursor-pointer transition-colors"
                   >
-                    Runner Login
+                    {t('nav_runner', 'Runner')} {t('nav_login', 'Login')}
                   </button>
                   <span className="text-rose-200">•</span>
                   <button
@@ -637,7 +656,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     onClick={() => switchMode('admin-login')}
                     className="text-[#86293D] hover:text-[#4A1525] font-bold underline underline-offset-4 cursor-pointer transition-colors"
                   >
-                    Admin Login
+                    {t('nav_admin', 'Admin')} {t('nav_login', 'Login')}
                   </button>
                 </div>
               </div>
@@ -672,7 +691,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     }`}
                   >
                     <Mic className="w-3.5 h-3.5" />
-                    <span>Artisan</span>
+                    <span>{t('nav_maker', 'Artisan')}</span>
                   </button>
                   <button
                     type="button"
@@ -684,7 +703,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     }`}
                   >
                     <ShoppingBag className="w-3.5 h-3.5" />
-                    <span>Buyer</span>
+                    <span>{t('nav_buyer', 'Buyer')}</span>
                   </button>
                   <button
                     type="button"
@@ -696,7 +715,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     }`}
                   >
                     <Bike className="w-3.5 h-3.5" />
-                    <span>Runner</span>
+                    <span>{t('nav_runner', 'Runner')}</span>
                   </button>
                   <button
                     type="button"
@@ -708,7 +727,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     }`}
                   >
                     <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>Admin</span>
+                    <span>{t('nav_admin', 'Admin')}</span>
                   </button>
                 </div>
               </div>
@@ -1011,13 +1030,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-bold text-[#4A1525] mb-1">
-                      Voice Language
+                      {t('voice_listening_in', 'Voice Language')}
                     </label>
                     <div className="relative">
                       <Globe className="w-4 h-4 text-[#86293D]/60 absolute left-3 top-3.5" />
                       <select
                         value={preferredLanguage}
-                        onChange={(e) => setPreferredLanguage(e.target.value)}
+                        onChange={(e) => handlePreferredLanguageChange(e.target.value)}
                         className="w-full bg-[#FAF7F5] border border-rose-200/80 rounded-xl pl-9.5 pr-3 py-2.5 text-sm text-stone-900 focus:outline-none focus:bg-white focus:border-[#C84B68] focus:ring-1 focus:ring-[#C84B68] transition-all"
                       >
                         {SUPPORTED_LANGUAGES.map((lang) => (

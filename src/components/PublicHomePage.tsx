@@ -48,8 +48,8 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
   onSwitchToPersona,
 }) => {
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
-  const { selectedLanguageCode, setLanguageCode, supportedLanguages } = useLanguage();
-  const activeQuote = ARTISAN_VOICE_QUOTES[selectedLanguageCode] || ARTISAN_VOICE_QUOTES.en;
+  const { selectedLanguageCode, setLanguageCode, supportedLanguages, t, voiceQuote } = useLanguage();
+  const activeQuote = voiceQuote;
 
   const faqs = [
     {
@@ -88,20 +88,21 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
               {/* Mission Badge with Lotus */}
               <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#FDF0F3] border border-[#F3CCD4] text-[#86293D] text-xs font-semibold shadow-2xs">
                 <LotusLogo className="w-4 h-4 text-[#C84B68]" />
-                <span>Voice-First AI • Hyperlocal Women Micro-Entrepreneurs</span>
+                <span>{t('hero_badge', 'Voice-First AI • Hyperlocal Women Micro-Entrepreneurs')}</span>
               </div>
 
               {/* Editorial Serif Main Title */}
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-serif font-bold tracking-tight text-[#4A1525] leading-[1.12]">
-                Your Skill. Your Voice. <br />
-                <span className="text-[#86293D]">Your Local Market.</span>
+                {t('hero_title_1', 'Your Skill. Your Voice.')} <br />
+                <span className="text-[#86293D]">{t('hero_title_2', 'Your Local Market.')}</span>
               </h1>
 
               {/* Subtitle */}
               <p className="text-base sm:text-lg text-[#6E555B] font-normal leading-relaxed max-w-xl">
-                Empowering neighborhood women makers, home cooks, and tailors to turn their talents
-                into financial independence — starting with their very first ₹1,000, zero typing,
-                and 100% voice-first in their mother tongue.
+                {t(
+                  'hero_desc',
+                  'Empowering neighborhood women makers, home cooks, and tailors to turn their talents into financial independence — starting with their very first ₹1,000, zero typing, and 100% voice-first in their mother tongue.'
+                )}
               </p>
 
               {/* Dual Primary & Secondary CTAs */}
@@ -113,9 +114,9 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
                   className="px-6 py-3.5 rounded-full bg-[#C84B68] hover:bg-[#B33956] text-white font-bold text-sm shadow-sm hover:shadow transition-all flex items-center justify-center gap-2.5 cursor-pointer group"
                 >
                   <Mic className="w-4 h-4 text-white group-hover:scale-110 transition-transform" />
-                  <span>Try Voice Onboarding</span>
+                  <span>{t('hero_try_voice', 'Try Voice Onboarding')}</span>
                   <span className="text-[11px] bg-white/20 px-2 py-0.5 rounded-full text-white font-medium">
-                    Speak 30s
+                    {t('hero_speak_30s', 'Speak 30s')}
                   </span>
                 </button>
 
@@ -126,7 +127,7 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
                   className="px-6 py-3.5 rounded-full bg-white hover:bg-rose-50/80 text-[#86293D] font-bold text-sm border border-[#E8A5B5] shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Compass className="w-4 h-4 text-[#C84B68]" />
-                  <span>Explore Local Makers Nearby</span>
+                  <span>{t('hero_explore_makers', 'Explore Local Makers Nearby')}</span>
                 </button>
               </div>
             </div>
@@ -142,7 +143,7 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
                 {/* Subtle corner badge */}
                 <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-md px-3 py-1 rounded-full border border-rose-100 shadow-xs flex items-center gap-1.5 text-[11px] font-semibold text-[#86293D]">
                   <Sparkles className="w-3 h-3 text-[#C84B68]" />
-                  <span>Empowering 100+ Local Makers</span>
+                  <span>{t('hero_empowering_badge', 'Empowering 100+ Local Makers')}</span>
                 </div>
               </div>
             </div>
@@ -158,7 +159,7 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
                     <Volume2 className="w-4 h-4" />
                   </div>
                   <h3 className="font-bold text-xs sm:text-sm text-[#4A1525]">
-                    Hear Real Artisan Voice Prompts:
+                    {t('hero_hear_prompts', 'Hear Real Artisan Voice Prompts:')}
                   </h3>
                 </div>
 
@@ -192,7 +193,7 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
 
               {/* Translation Text */}
               <div className="text-[11px] text-[#86293D] font-medium">
-                Translation: {activeQuote.translation}
+                {t('hero_translation_prefix', 'Translation:')} {activeQuote.translation}
               </div>
 
               {/* Footer Row: Artisan Name on Left, AI Transcribed Status on Right */}
@@ -200,7 +201,7 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
                 <span className="text-stone-500 font-medium">{activeQuote.author}</span>
                 <span className="text-[#C84B68] font-semibold flex items-center gap-1.5 text-[11px]">
                   <Sparkles className="w-3.5 h-3.5 text-[#C84B68]" />
-                  <span>AI Transcribed</span>
+                  <span>{t('hero_ai_transcribed', 'AI Transcribed')}</span>
                 </span>
               </div>
             </div>
@@ -214,9 +215,9 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
                 <ShoppingBag className="w-5 h-5" />
               </div>
               <div>
-                <div className="text-xl font-bold font-serif text-[#4A1525]">0% Fee</div>
-                <div className="text-xs font-semibold text-stone-700 mt-0.5">On First ₹1,000</div>
-                <div className="text-[10px] text-stone-500">100% kept by maker</div>
+                <div className="text-xl font-bold font-serif text-[#4A1525]">{t('card_fee_title', '0% Fee')}</div>
+                <div className="text-xs font-semibold text-stone-700 mt-0.5">{t('card_fee_subtitle', 'On First ₹1,000')}</div>
+                <div className="text-[10px] text-stone-500">{t('card_fee_desc', '100% kept by maker')}</div>
               </div>
             </div>
 
@@ -226,9 +227,9 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
                 <Bike className="w-5 h-5" />
               </div>
               <div>
-                <div className="text-xl font-bold font-serif text-[#4A1525]">&lt; 60 Mins</div>
-                <div className="text-xs font-semibold text-stone-700 mt-0.5">Hyperlocal Delivery</div>
-                <div className="text-[10px] text-stone-500">Electric runner pickup</div>
+                <div className="text-xl font-bold font-serif text-[#4A1525]">{t('card_delivery_title', '< 60 Mins')}</div>
+                <div className="text-xs font-semibold text-stone-700 mt-0.5">{t('card_delivery_subtitle', 'Hyperlocal Delivery')}</div>
+                <div className="text-[10px] text-stone-500">{t('card_delivery_desc', 'Electric runner pickup')}</div>
               </div>
             </div>
 
@@ -238,9 +239,9 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
                 <Mic className="w-5 h-5" />
               </div>
               <div>
-                <div className="text-xl font-bold font-serif text-[#4A1525]">Voice-Only</div>
-                <div className="text-xs font-semibold text-stone-700 mt-0.5">No Typing Required</div>
-                <div className="text-[10px] text-stone-500">23 regional languages</div>
+                <div className="text-xl font-bold font-serif text-[#4A1525]">{t('card_voice_title', 'Voice-Only')}</div>
+                <div className="text-xs font-semibold text-stone-700 mt-0.5">{t('card_voice_subtitle', 'No Typing Required')}</div>
+                <div className="text-[10px] text-stone-500">{t('card_voice_desc', '23 regional languages')}</div>
               </div>
             </div>
 
@@ -250,9 +251,9 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
                 <ShieldCheck className="w-5 h-5" />
               </div>
               <div>
-                <div className="text-xl font-bold font-serif text-[#4A1525]">Verified</div>
-                <div className="text-xs font-semibold text-stone-700 mt-0.5">Neighborhood Trust</div>
-                <div className="text-[10px] text-stone-500">Direct doorstep UPI</div>
+                <div className="text-xl font-bold font-serif text-[#4A1525]">{t('card_trust_title', 'Verified')}</div>
+                <div className="text-xs font-semibold text-stone-700 mt-0.5">{t('card_trust_subtitle', 'Neighborhood Trust')}</div>
+                <div className="text-[10px] text-stone-500">{t('card_trust_desc', 'Direct doorstep UPI')}</div>
               </div>
             </div>
           </div>
@@ -875,10 +876,10 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
       <section className="space-y-6 max-w-3xl mx-auto">
         <div className="text-center space-y-2">
           <div className="text-xs font-bold uppercase tracking-widest text-[#86293D]">
-            Common Questions
+            {t('faq_badge', 'Common Questions')}
           </div>
           <h2 className="text-2xl sm:text-3xl font-bold text-[#4A1525] font-serif">
-            Frequently Asked Questions
+            {t('faq_title', 'Frequently Asked Questions')}
           </h2>
         </div>
 
@@ -934,14 +935,14 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
             className="w-full sm:w-auto px-8 py-3.5 rounded-full bg-[#C84B68] hover:bg-[#B33956] text-white font-bold text-sm shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
           >
             <Mic className="w-4 h-4 text-white" />
-            <span>Speak Your Skills (Voice Onboard)</span>
+            <span>{t('btn_voice_onboard', 'Speak Your Skills (Voice Onboard)')}</span>
           </button>
           <button
             type="button"
             onClick={onExploreArtisans}
             className="w-full sm:w-auto px-8 py-3.5 rounded-full bg-white hover:bg-rose-50 text-[#86293D] font-bold text-sm border border-rose-200 cursor-pointer shadow-sm"
           >
-            Explore Neighborhood Marketplace
+            {t('btn_explore_market', 'Explore Neighborhood Marketplace')}
           </button>
         </div>
       </section>

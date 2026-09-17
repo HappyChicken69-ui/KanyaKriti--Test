@@ -60,7 +60,8 @@ export interface Listing {
   artisanReviewCount: number;
   title: string;
   description: string;
-  category: 'Tailoring' | 'Cooking' | 'Alterations' | 'Handicrafts' | 'Embroidery' | 'Beauty' | 'Other';
+  category: 'Tailoring' | 'Cooking' | 'Alterations' | 'Handicrafts' | 'Embroidery' | 'Beauty' | 'Other' | string;
+  customCategory?: string;
   price: number;
   currency: 'INR';
   turnaroundHours: number;
@@ -156,7 +157,8 @@ export interface NotificationItem {
 
 export interface ExtractedSkillInfo {
   skill: string;
-  category: 'Tailoring' | 'Cooking' | 'Alterations' | 'Handicrafts' | 'Embroidery' | 'Beauty' | 'Other';
+  category: 'Tailoring' | 'Cooking' | 'Alterations' | 'Handicrafts' | 'Embroidery' | 'Beauty' | 'Other' | string;
+  customCategory?: string;
   description: string;
   price: number;
   currency: 'INR';
@@ -177,7 +179,8 @@ export interface ExtractedSkillInfo {
 export interface GeneratedListing {
   title: string;
   shortDescription: string;
-  category: 'Tailoring' | 'Cooking' | 'Alterations' | 'Handicrafts' | 'Embroidery' | 'Beauty' | 'Other';
+  category: 'Tailoring' | 'Cooking' | 'Alterations' | 'Handicrafts' | 'Embroidery' | 'Beauty' | 'Other' | string;
+  customCategory?: string;
   price: number;
   estimatedTurnaround: string;
   turnaroundHours: number;

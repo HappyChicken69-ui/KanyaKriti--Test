@@ -3,11 +3,14 @@
 @layer base {
   body {
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-    background-color: #FAF7F5;
+    background-color: #FCECEF;
     color: #2D2527;
   }
   .font-serif {
     font-family: 'Playfair Display', 'Rozha One', Georgia, serif;
+  }
+  .font-script {
+    font-family: 'Caveat', cursive;
   }
 }
 

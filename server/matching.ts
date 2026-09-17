@@ -42,21 +42,28 @@ export function computeSkillScore(
   const cat = (categoryFilter || '').toLowerCase().trim();
 
   // Category match
-  if (cat && listing.category.toLowerCase() === cat) {
-    score += 50;
+  if (cat) {
+    if (listing.category.toLowerCase() === cat) {
+      score += 50;
+    } else if (listing.customCategory && listing.customCategory.toLowerCase() === cat) {
+      score += 50;
+    } else if (cat === 'other' && (listing.category.toLowerCase() === 'other' || !!listing.customCategory)) {
+      score += 50;
+    }
   }
 
   if (q) {
     const titleLower = listing.title.toLowerCase();
     const descLower = listing.description.toLowerCase();
     const catLower = listing.category.toLowerCase();
+    const customCatLower = (listing.customCategory || '').toLowerCase();
     const tagsLower = listing.tags.map((t) => t.toLowerCase()).join(' ');
     const skillsLower = artisan.skills.map((s) => s.toLowerCase()).join(' ');
 
     if (titleLower.includes(q)) score += 40;
     else if (descLower.includes(q)) score += 25;
 
-    if (catLower.includes(q)) score += 30;
+    if (catLower.includes(q) || customCatLower.includes(q)) score += 30;
     if (tagsLower.includes(q) || skillsLower.includes(q)) score += 25;
 
     // Word-level token matching

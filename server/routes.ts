@@ -434,7 +434,8 @@ router.post('/ai/transcribe', upload.single('audio'), async (req: Request, res: 
       });
     }
 
-    const transcript = await transcribeAudioWithGroq(audioBuffer, filename, mimeType);
+    const requestedLang = (req.body?.language as string) || (req.headers['x-language'] as string);
+    const transcript = await transcribeAudioWithGroq(audioBuffer, filename, mimeType, requestedLang);
     return res.json({ transcript });
   } catch (err: any) {
     console.error('[Groq] AI transcribe error:', err);
@@ -444,11 +445,11 @@ router.post('/ai/transcribe', upload.single('audio'), async (req: Request, res: 
 
 router.post('/ai/extract-skill', async (req: Request, res: Response) => {
   try {
-    const { spokenText } = req.body;
+    const { spokenText, language } = req.body;
     if (!spokenText || typeof spokenText !== 'string' || spokenText.trim() === '') {
       return res.status(400).json({ error: 'spokenText is required' });
     }
-    const extracted = await extractSkillWithGroq(spokenText.trim());
+    const extracted = await extractSkillWithGroq(spokenText.trim(), language);
     return res.json(extracted);
   } catch (err: any) {
     console.error('[Groq] AI extraction error:', err);
@@ -549,6 +550,7 @@ router.post('/listings', (req: Request, res: Response) => {
     title,
     description,
     category,
+    customCategory,
     price,
     turnaroundHours,
     turnaroundDisplay,
@@ -578,6 +580,7 @@ router.post('/listings', (req: Request, res: Response) => {
     title,
     description,
     category,
+    customCategory: customCategory || (category !== 'Other' && !['Tailoring', 'Cooking', 'Alterations', 'Handicrafts', 'Embroidery', 'Beauty'].includes(category) ? category : undefined),
     price: Number(price),
     currency: 'INR',
     turnaroundHours: Number(turnaroundHours) || 24,

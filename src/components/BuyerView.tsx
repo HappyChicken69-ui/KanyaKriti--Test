@@ -327,7 +327,7 @@ export const BuyerView: React.FC<BuyerViewProps> = ({
                     <div className="p-4 space-y-2.5">
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-[#86293D] bg-rose-50 border border-rose-200/60 px-2 py-0.5 rounded">
-                          {listing.category}
+                          {listing.customCategory || listing.category}
                         </span>
                         <div className="text-xs text-stone-500 flex items-center gap-1">
                           <Clock className="w-3 h-3 text-stone-400" />
@@ -472,7 +472,7 @@ export const BuyerView: React.FC<BuyerViewProps> = ({
                 <div className="flex items-start justify-between">
                   <div>
                     <span className="text-[10px] font-bold text-[#86293D] bg-rose-50 border border-rose-200/60 px-2 py-0.5 rounded uppercase">
-                      {selectedListing.category}
+                      {selectedListing.customCategory || selectedListing.category}
                     </span>
                     <h5 className="font-bold text-stone-900 text-sm mt-1">{selectedListing.title}</h5>
                     <p className="text-xs text-stone-500">
