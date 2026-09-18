@@ -22,6 +22,7 @@ import {
   Search,
   ChevronDown,
   Globe,
+  Loader2,
 } from 'lucide-react';
 import { User, NotificationItem, ArtisanProfile } from '../types.ts';
 import { AuthViewMode } from './AuthModal.tsx';
@@ -66,7 +67,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const unreadCount = notifications.filter((n) => !n.read).length;
-  const { location, status: locationStatus, requestLocation } = useCurrentLocation();
+  const { location, status: locationStatus, requestLocation, openNeighbourhoodModal } = useCurrentLocation();
   const { selectedLanguageCode, setLanguageCode, supportedLanguages, t } = useLanguage();
 
   return (
@@ -91,14 +92,23 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="hidden sm:inline-flex items-center gap-1.5 text-[11px]">
             {locationStatus === 'detecting' && (
               <span className="inline-flex items-center gap-1.5 text-stone-500">
-                <MapPin className="w-3 h-3 text-[#C84B68] animate-pulse" />
-                <span>Detecting your location…</span>
+                <Loader2 className="w-3 h-3 text-[#C84B68] animate-spin" />
+                <span>Detecting your neighbourhood…</span>
               </span>
             )}
             {locationStatus === 'granted' && location && (
               <span className="inline-flex items-center gap-1.5 text-[#4A1525] font-medium">
                 <MapPin className="w-3 h-3 text-[#C84B68]" />
-                <span>Your Hyperlocal Zone • {location.displayName}</span>
+                <span>
+                  Your Neighbourhood • <strong className="font-bold text-[#86293D]">{location.locality || location.city || location.displayName}</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={openNeighbourhoodModal}
+                  className="text-[#C84B68] hover:text-[#86293D] underline font-bold text-[10px] ml-1 cursor-pointer"
+                >
+                  Change
+                </button>
               </span>
             )}
             {(locationStatus === 'denied' ||
@@ -106,13 +116,13 @@ export const Header: React.FC<HeaderProps> = ({
               (locationStatus !== 'detecting' && !location)) && (
               <span className="inline-flex items-center gap-1.5 text-stone-500">
                 <MapPin className="w-3 h-3 text-stone-400" />
-                <span>Location unavailable</span>
+                <span>Location unavailable •</span>
                 <button
                   type="button"
-                  onClick={requestLocation}
-                  className="text-[#C84B68] hover:text-[#86293D] underline font-medium cursor-pointer ml-1"
+                  onClick={openNeighbourhoodModal}
+                  className="text-[#C84B68] hover:text-[#86293D] underline font-bold cursor-pointer"
                 >
-                  Enable Location
+                  Choose your neighbourhood
                 </button>
               </span>
             )}
@@ -306,22 +316,29 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center gap-2 sm:gap-2.5">
             {/* Location Display Pill (From Reference Design) */}
             <div
-              onClick={requestLocation}
-              className="hidden md:flex items-center gap-2 px-3 py-1 bg-[#FFF9FA] hover:bg-rose-50 border border-rose-100 rounded-full cursor-pointer transition-colors"
-              title="Click to update device location"
+              id="header-neighbourhood-pill"
+              onClick={openNeighbourhoodModal}
+              className="hidden md:flex items-center gap-2 px-3 py-1 bg-[#FFF9FA] hover:bg-rose-50 border border-rose-200/80 rounded-full cursor-pointer transition-all shadow-2xs group"
+              title="Click to change your active neighbourhood"
             >
-              <div className="w-6 h-6 rounded-full bg-[#FFF0F3] flex items-center justify-center text-[#C84B68]">
-                <MapPin className="w-3.5 h-3.5" />
+              <div className="w-6 h-6 rounded-full bg-[#FFF0F3] group-hover:bg-[#FFE4EA] flex items-center justify-center text-[#C84B68] transition-colors">
+                {locationStatus === 'detecting' ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <MapPin className="w-3.5 h-3.5" />
+                )}
               </div>
               <div className="text-left">
-                <div className="text-[9px] uppercase font-bold text-[#8C7A80] leading-none">
-                  Your Location
+                <div className="text-[9px] uppercase font-bold text-[#8C7A80] leading-none tracking-wider">
+                  Your Neighbourhood
                 </div>
                 <div className="text-[11px] font-bold text-[#4A1525] leading-tight flex items-center gap-0.5">
-                  <span className="truncate max-w-[90px]">
-                    {location?.locality || location?.city || 'Local Area'}
+                  <span className="truncate max-w-[105px]">
+                    {locationStatus === 'detecting'
+                      ? 'Detecting…'
+                      : (location?.locality || location?.city || 'Select Area')}
                   </span>
-                  <ChevronDown className="w-3 h-3 text-[#8C7A80]" />
+                  <ChevronDown className="w-3 h-3 text-[#8C7A80] group-hover:text-[#C84B68] transition-colors" />
                 </div>
               </div>
             </div>

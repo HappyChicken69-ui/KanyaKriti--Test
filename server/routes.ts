@@ -8,7 +8,10 @@ import {
   transcribeAudioWithGroq,
   GROQ_CONFIG,
 } from './groq.ts';
-import { calculateMatchScore } from './matching.ts';
+import { calculateMatchScore, calculateDistanceKm } from './matching.ts';
+import { parseBuyerIntent } from './intentParser.ts';
+import { rankAndShortlistCandidates } from './aiShortlist.ts';
+import { resolveContextualListingImage } from './images.ts';
 import { OrderStatus, PaymentMethod } from '../src/types.ts';
 import {
   mongoUserService,
@@ -172,8 +175,8 @@ async function handleUserRegistration(req: Request, res: Response, forcedRole?: 
         default_address: `${neighborhood || 'Local Neighborhood'}, ${city || 'Local Area'}`,
         neighborhood: neighborhood || 'Local Neighborhood',
         city: city || 'Local Area',
-        lat: 12.9352,
-        lng: 77.6245,
+        lat: typeof req.body.lat === 'number' ? req.body.lat : (db.activeLocation?.latitude ?? 0),
+        lng: typeof req.body.lng === 'number' ? req.body.lng : (db.activeLocation?.longitude ?? 0),
       });
 
       db.users.push({
@@ -185,8 +188,8 @@ async function handleUserRegistration(req: Request, res: Response, forcedRole?: 
         avatar: newUser.avatar_url,
         city: city || 'Local Area',
         neighborhood: neighborhood || 'Local Neighborhood',
-        lat: 12.9352,
-        lng: 77.6245,
+        lat: typeof req.body.lat === 'number' ? req.body.lat : (db.activeLocation?.latitude ?? 0),
+        lng: typeof req.body.lng === 'number' ? req.body.lng : (db.activeLocation?.longitude ?? 0),
         created_at: newUser.created_at,
       });
     } else if (targetRole === 'RUNNER') {
@@ -199,8 +202,8 @@ async function handleUserRegistration(req: Request, res: Response, forcedRole?: 
         total_deliveries: 0,
         neighborhood: neighborhood || 'Local Neighborhood',
         city: city || 'Local Area',
-        lat: 12.9348,
-        lng: 77.6258,
+        lat: typeof req.body.lat === 'number' ? req.body.lat : (db.activeLocation?.latitude ?? 0),
+        lng: typeof req.body.lng === 'number' ? req.body.lng : (db.activeLocation?.longitude ?? 0),
       });
 
       db.users.push({
@@ -513,6 +516,8 @@ router.put('/artisans/profile', (req: Request, res: Response) => {
 
 router.get('/listings', (req: Request, res: Response) => {
   const { category, search, artisanId } = req.query;
+  // Ensure database store is deduplicated
+  db.deduplicateListings();
   let results = [...db.listings];
 
   if (artisanId) {
@@ -544,7 +549,7 @@ router.get('/listings/:id', (req: Request, res: Response) => {
   return res.json({ listing, artisan });
 });
 
-router.post('/listings', (req: Request, res: Response) => {
+router.post('/listings', async (req: Request, res: Response) => {
   const {
     artisanId,
     title,
@@ -563,13 +568,35 @@ router.post('/listings', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Missing required fields: artisanId, title, price, category' });
   }
 
+  // Idempotency check: prevent duplicate listing for same artisan with same title/details
+  const existingDuplicate = db.findDuplicateListing(artisanId, title, description);
+  if (existingDuplicate) {
+    console.log(`[POST /listings] Duplicate submission detected for artisan ${artisanId} ("${title}"). Returning existing ${existingDuplicate.id}`);
+    return res.status(200).json({ listing: existingDuplicate, isExisting: true });
+  }
+
   const artisan = db.getArtisanProfileById(artisanId) || db.getArtisanProfileByUserId(artisanId);
   const artisanName = artisan ? artisan.name : 'Sunita Devi';
   const artisanAvatar = artisan ? artisan.avatar : 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80';
-  const approximateLat = artisan ? artisan.approximateLat : 12.9345;
-  const approximateLng = artisan ? artisan.approximateLng : 77.6265;
-  const neighborhood = artisan ? artisan.neighborhood : 'Local Neighborhood';
-  const city = artisan ? artisan.city : 'Local Area';
+  const approximateLat = artisan ? artisan.approximateLat : (db.activeLocation?.latitude ?? 0);
+  const approximateLng = artisan ? artisan.approximateLng : (db.activeLocation?.longitude ?? 0);
+  const neighborhood = artisan ? artisan.neighborhood : (db.activeLocation?.locality ?? 'Local Neighborhood');
+  const city = artisan ? artisan.city : (db.activeLocation?.city ?? 'Local Area');
+
+  // Resolve authentic context-aware image matching the actual craft/work
+  const resolvedCategory = category;
+  const resolvedCustomCategory = customCategory || (category !== 'Other' && !['Tailoring', 'Cooking', 'Alterations', 'Handicrafts', 'Embroidery', 'Beauty'].includes(category) ? category : undefined);
+
+  const matchedImageUrl = (imageUrl && typeof imageUrl === 'string' && imageUrl.trim().length > 10 && !imageUrl.includes('placeholder'))
+    ? imageUrl.trim()
+    : resolveContextualListingImage({
+        title,
+        category: resolvedCategory,
+        customCategory: resolvedCustomCategory,
+        description,
+        tags,
+        searchKeywords,
+      });
 
   const newListing = db.addListing({
     artisanId,
@@ -579,8 +606,8 @@ router.post('/listings', (req: Request, res: Response) => {
     artisanReviewCount: artisan ? artisan.reviewCount : 1,
     title,
     description,
-    category,
-    customCategory: customCategory || (category !== 'Other' && !['Tailoring', 'Cooking', 'Alterations', 'Handicrafts', 'Embroidery', 'Beauty'].includes(category) ? category : undefined),
+    category: resolvedCategory,
+    customCategory: resolvedCustomCategory,
     price: Number(price),
     currency: 'INR',
     turnaroundHours: Number(turnaroundHours) || 24,
@@ -592,8 +619,11 @@ router.post('/listings', (req: Request, res: Response) => {
     approximateLng,
     neighborhood,
     city,
-    imageUrl: imageUrl || 'https://images.unsplash.com/photo-1558769132-cb1aea458c5e?w=500&auto=format&fit=crop&q=80',
+    imageUrl: matchedImageUrl,
   });
+
+  // Persist to MongoDB collection (or embedded memory store)
+  await mongoUserService.saveListing(newListing);
 
   return res.status(201).json({ listing: newListing });
 });
@@ -602,46 +632,244 @@ router.post('/listings', (req: Request, res: Response) => {
 // 5. HYPERLOCAL MATCHING ENGINE
 // ==========================================
 
-router.post('/match', (req: Request, res: Response) => {
-  const { query, category, maxBudget, buyerLat, buyerLng, radiusKm } = req.body;
+router.post('/location/active', (req: Request, res: Response) => {
+  const { latitude, longitude, locality, city, source } = req.body;
+  if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+    return res.status(400).json({ error: 'Valid numerical latitude and longitude are required' });
+  }
 
-  const lat = typeof buyerLat === 'number' ? buyerLat : 12.9352;
-  const lng = typeof buyerLng === 'number' ? buyerLng : 77.6245;
-  const maxRadius = typeof radiusKm === 'number' ? radiusKm : 15;
-
-  const matches = db.listings.map((listing) => {
-    const artisan = db.getArtisanProfileById(listing.artisanId) || db.artisanProfiles[0];
-    return calculateMatchScore(
-      query || '',
-      category,
-      maxBudget ? Number(maxBudget) : undefined,
-      lat,
-      lng,
-      artisan,
-      listing
-    );
+  db.setActiveLocation({
+    latitude,
+    longitude,
+    locality,
+    city,
+    source,
   });
 
-  // Filter by dynamic radius if required
-  const filtered = matches.filter((m) => m.distanceKm <= maxRadius);
-
-  // Sort descending by transparent match_score
-  filtered.sort((a, b) => b.matchScore - a.matchScore);
-
   return res.json({
-    matches: filtered,
-    total: filtered.length,
-    criteria: {
-      formula: '0.40 * skill_compatibility + 0.35 * distance_proximity + 0.15 * maker_rating + 0.10 * budget_fit',
-      buyerLocation: { lat, lng },
-      radiusKm: maxRadius,
-    },
+    success: true,
+    activeLocation: db.activeLocation,
+    totalListings: db.listings.length,
   });
 });
 
+router.get('/location/active', (_req: Request, res: Response) => {
+  return res.json({
+    activeLocation: db.activeLocation,
+  });
+});
+
+// ==========================================
+// 5. BUYER SEARCH, SUGGESTIONS & AI SHORTLISTING
+// ==========================================
+
+router.get('/search/suggestions', (req: Request, res: Response) => {
+  const q = ((req.query.q as string) || '').trim().toLowerCase();
+
+  const allListings = db.listings;
+  const allArtisans = db.artisanProfiles;
+
+  if (!q) {
+    // Dynamic popular suggestions based on real active services in seed/mongo database
+    const defaultSuggestions = [
+      { text: 'Blouse alteration tomorrow', type: 'service', subtitle: 'In Alterations • Fast 24h turnaround' },
+      { text: 'Homestyle Punjabi tiffin', type: 'service', subtitle: 'In Cooking • Fresh homemade thali' },
+      { text: 'Bridal mehendi near me', type: 'service', subtitle: 'In Beauty • Natural organic henna' },
+      { text: 'Hand embroidery under ₹500', type: 'service', subtitle: 'In Embroidery • Zari & aari work' },
+      { text: 'Handmade macrame planters', type: 'service', subtitle: 'In Handicrafts • 100% cotton craft' },
+      { text: 'Saree fall & piko finishing', type: 'service', subtitle: 'In Tailoring • Within 1 day' },
+    ];
+    return res.json({ suggestions: defaultSuggestions });
+  }
+
+  const matches: Array<{ text: string; type: 'service' | 'category' | 'skill'; subtitle?: string }> = [];
+  const seenTexts = new Set<string>();
+
+  // 1. Categories
+  const categories = ['Tailoring', 'Alterations', 'Cooking', 'Handicrafts', 'Embroidery', 'Beauty'];
+  for (const cat of categories) {
+    if (cat.toLowerCase().includes(q)) {
+      const count = allListings.filter((l) => l.category.toLowerCase() === cat.toLowerCase()).length;
+      matches.push({
+        text: cat,
+        type: 'category',
+        subtitle: `${count} verified ${cat.toLowerCase()} artisans nearby`,
+      });
+      seenTexts.add(cat.toLowerCase());
+    }
+  }
+
+  // 2. Real Listing titles & keywords
+  for (const listing of allListings) {
+    const title = listing.title;
+    if (title.toLowerCase().includes(q) && !seenTexts.has(title.toLowerCase())) {
+      matches.push({
+        text: title,
+        type: 'service',
+        subtitle: `₹${listing.price} • by ${listing.artisanName} (${listing.neighborhood})`,
+      });
+      seenTexts.add(title.toLowerCase());
+    }
+    // Also check keywords
+    for (const kw of listing.searchKeywords || []) {
+      if (kw.toLowerCase().includes(q) && !seenTexts.has(kw.toLowerCase()) && kw.length > 3) {
+        matches.push({
+          text: kw.charAt(0).toUpperCase() + kw.slice(1),
+          type: 'service',
+          subtitle: `In ${listing.category} • from ₹${listing.price}`,
+        });
+        seenTexts.add(kw.toLowerCase());
+      }
+    }
+  }
+
+  // 3. Real Artisan skills
+  for (const artisan of allArtisans) {
+    for (const skill of artisan.skills || []) {
+      if (skill.toLowerCase().includes(q) && !seenTexts.has(skill.toLowerCase())) {
+        matches.push({
+          text: skill,
+          type: 'skill',
+          subtitle: `Verified skill of ${artisan.name}`,
+        });
+        seenTexts.add(skill.toLowerCase());
+      }
+    }
+  }
+
+  // 4. Natural query templates
+  if (!q.includes('near me') && matches.length > 0) {
+    const nearMeText = `${q} near me`;
+    if (!seenTexts.has(nearMeText.toLowerCase())) {
+      matches.push({
+        text: nearMeText,
+        type: 'service',
+        subtitle: `Search nearby in your active neighbourhood`,
+      });
+      seenTexts.add(nearMeText.toLowerCase());
+    }
+  }
+
+  return res.json({ suggestions: matches.slice(0, 8) });
+});
+
+router.post('/match', async (req: Request, res: Response) => {
+  try {
+    const { query, category, maxBudget, buyerLat, buyerLng, radiusKm, locality, city } = req.body;
+
+    // Determine active coordinates: passed explicitly from client, or from db.activeLocation
+    let lat = typeof buyerLat === 'number' && !isNaN(buyerLat) ? buyerLat : db.activeLocation?.latitude;
+    let lng = typeof buyerLng === 'number' && !isNaN(buyerLng) ? buyerLng : db.activeLocation?.longitude;
+
+    if (lat === undefined || lng === undefined) {
+      return res.json({
+        matches: [],
+        total: 0,
+        criteria: {
+          buyerLocation: null,
+          radiusKm: typeof radiusKm === 'number' ? radiusKm : 5,
+          needsLocation: true,
+        },
+      });
+    }
+
+    // Ensure community listings and artisans are localized to the active center
+    if (!db.activeLocation || db.activeLocation.latitude !== lat || db.activeLocation.longitude !== lng) {
+      db.setActiveLocation({
+        latitude: lat,
+        longitude: lng,
+        locality: locality || db.activeLocation?.locality,
+        city: city || db.activeLocation?.city,
+      });
+    }
+
+    const maxRadius = typeof radiusKm === 'number' && radiusKm > 0 ? radiusKm : 5;
+
+    // 1. Natural Language Intent Parsing
+    const parsedIntent = parseBuyerIntent(
+      query || '',
+      category && category !== 'All' ? category : undefined,
+      maxBudget ? Number(maxBudget) : undefined
+    );
+
+    const activeCategory = category && category !== 'All' ? category : parsedIntent.category;
+    const effectiveBudget = maxBudget ? Number(maxBudget) : parsedIntent.maxBudget;
+
+    // 2. Candidate Retrieval & Strict Hard Constraints (Applied BEFORE Scoring & AI)
+    db.deduplicateListings();
+    const candidateListings = db.listings.filter((listing) => {
+      // Hard Constraint: Must be available
+      if (listing.availability === false) return false;
+
+      // Hard Constraint: Radius (distance cannot exceed selected radius)
+      const distance = calculateDistanceKm(lat!, lng!, listing.approximateLat, listing.approximateLng);
+      if (distance > maxRadius) return false;
+
+      // Hard Constraint: Category (if specified)
+      if (activeCategory && activeCategory !== 'All') {
+        const catLower = activeCategory.toLowerCase();
+        const lCatLower = (listing.category || '').toLowerCase();
+        const lCustomCatLower = (listing.customCategory || '').toLowerCase();
+        if (lCatLower !== catLower && lCustomCatLower !== catLower) {
+          return false;
+        }
+      }
+
+      // Hard Constraint: Budget (if specified from dropdown or natural query)
+      if (effectiveBudget && effectiveBudget > 0) {
+        if (listing.price > effectiveBudget) return false;
+      }
+
+      return true;
+    });
+
+    // 3. Deterministic Multi-Factor Scoring
+    const rawMatches = candidateListings.map((listing) => {
+      const artisan = db.getArtisanProfileById(listing.artisanId) || db.artisanProfiles[0];
+      return calculateMatchScore(
+        parsedIntent.cleanedQuery || query || '',
+        activeCategory,
+        effectiveBudget,
+        lat!,
+        lng!,
+        artisan,
+        listing
+      );
+    });
+
+    // 4. AI Shortlisting & Relevance Ranking Pipeline
+    const shortlistResult = await rankAndShortlistCandidates(parsedIntent, rawMatches);
+
+    return res.json({
+      matches: shortlistResult.matches,
+      total: shortlistResult.matches.length,
+      parsedIntent,
+      shortlistSummary: shortlistResult.shortlistSummary,
+      isAiEnhanced: shortlistResult.isAiEnhanced,
+      criteria: {
+        formula: '0.40 * skill_compatibility + 0.35 * distance_proximity + 0.15 * maker_rating + 0.10 * budget_fit',
+        buyerLocation: { lat, lng },
+        radiusKm: maxRadius,
+        effectiveBudget,
+        effectiveCategory: activeCategory || 'All',
+      },
+    });
+  } catch (err: any) {
+    console.error('[API /match] Error computing matches:', err);
+    return res.status(500).json({ error: 'Failed to compute matches', message: err?.message });
+  }
+});
+
 router.get('/match/nearby', (req: Request, res: Response) => {
-  const lat = parseFloat(req.query.lat as string) || 12.9352;
-  const lng = parseFloat(req.query.lng as string) || 77.6245;
+  const reqLat = parseFloat(req.query.lat as string);
+  const reqLng = parseFloat(req.query.lng as string);
+  const lat = !isNaN(reqLat) ? reqLat : db.activeLocation?.latitude;
+  const lng = !isNaN(reqLng) ? reqLng : db.activeLocation?.longitude;
+
+  if (lat === undefined || lng === undefined) {
+    return res.json({ matches: [] });
+  }
+
   const radius = parseFloat(req.query.radius as string) || 5;
 
   const matches = db.listings.map((listing) => {
@@ -996,6 +1224,148 @@ router.get('/geocode/reverse', async (req: Request, res: Response) => {
     displayName: `${latitude.toFixed(3)}°, ${longitude.toFixed(3)}°`,
     latitude,
     longitude,
+  });
+});
+
+// Forward geocoding: search any neighbourhood, colony, sector, or city
+const POPULAR_LOCALITIES: Array<{
+  locality: string;
+  city: string;
+  state: string;
+  country: string;
+  latitude: number;
+  longitude: number;
+  displayName: string;
+  keywords: string[];
+}> = [
+  // Bengaluru
+  { locality: 'Koramangala', city: 'Bengaluru', state: 'Karnataka', country: 'India', latitude: 12.9352, longitude: 77.6245, displayName: 'Koramangala, Bengaluru, Karnataka', keywords: ['koramangala', 'kora', 'bengaluru', 'bangalore'] },
+  { locality: 'Indiranagar', city: 'Bengaluru', state: 'Karnataka', country: 'India', latitude: 12.9784, longitude: 77.6408, displayName: 'Indiranagar, Bengaluru, Karnataka', keywords: ['indiranagar', 'indira', '100ft road', 'bengaluru', 'bangalore'] },
+  { locality: 'HSR Layout', city: 'Bengaluru', state: 'Karnataka', country: 'India', latitude: 12.9121, longitude: 77.6446, displayName: 'HSR Layout, Bengaluru, Karnataka', keywords: ['hsr', 'hsr layout', 'bengaluru', 'bangalore'] },
+  { locality: 'Jayanagar', city: 'Bengaluru', state: 'Karnataka', country: 'India', latitude: 12.9299, longitude: 77.5824, displayName: 'Jayanagar, Bengaluru, Karnataka', keywords: ['jayanagar', '4th block', 'bengaluru', 'bangalore'] },
+  { locality: 'Whitefield', city: 'Bengaluru', state: 'Karnataka', country: 'India', latitude: 12.9698, longitude: 77.7499, displayName: 'Whitefield, Bengaluru, Karnataka', keywords: ['whitefield', 'itpl', 'bengaluru', 'bangalore'] },
+  { locality: 'Malleshwaram', city: 'Bengaluru', state: 'Karnataka', country: 'India', latitude: 13.0033, longitude: 77.5703, displayName: 'Malleshwaram, Bengaluru, Karnataka', keywords: ['malleshwaram', 'malleswaram', 'bengaluru', 'bangalore'] },
+  { locality: 'JP Nagar', city: 'Bengaluru', state: 'Karnataka', country: 'India', latitude: 12.9063, longitude: 77.5857, displayName: 'JP Nagar, Bengaluru, Karnataka', keywords: ['jp nagar', 'jayaprakash nagar', 'bengaluru', 'bangalore'] },
+  { locality: 'BTM Layout', city: 'Bengaluru', state: 'Karnataka', country: 'India', latitude: 12.9166, longitude: 77.6101, displayName: 'BTM Layout, Bengaluru, Karnataka', keywords: ['btm', 'btm layout', 'bengaluru', 'bangalore'] },
+  // Mumbai
+  { locality: 'Bandra West', city: 'Mumbai', state: 'Maharashtra', country: 'India', latitude: 19.0596, longitude: 72.8295, displayName: 'Bandra West, Mumbai, Maharashtra', keywords: ['bandra', 'bandra west', 'linking road', 'mumbai', 'bombay'] },
+  { locality: 'Powai', city: 'Mumbai', state: 'Maharashtra', country: 'India', latitude: 19.1176, longitude: 72.9060, displayName: 'Powai, Mumbai, Maharashtra', keywords: ['powai', 'hiranandani', 'mumbai'] },
+  { locality: 'Andheri West', city: 'Mumbai', state: 'Maharashtra', country: 'India', latitude: 19.1363, longitude: 72.8277, displayName: 'Andheri West, Mumbai, Maharashtra', keywords: ['andheri', 'andheri west', 'lokhandwala', 'mumbai'] },
+  { locality: 'Andheri East', city: 'Mumbai', state: 'Maharashtra', country: 'India', latitude: 19.1136, longitude: 72.8697, displayName: 'Andheri East, Mumbai, Maharashtra', keywords: ['andheri east', 'seepz', 'mumbai'] },
+  { locality: 'Juhu', city: 'Mumbai', state: 'Maharashtra', country: 'India', latitude: 19.0988, longitude: 72.8264, displayName: 'Juhu, Mumbai, Maharashtra', keywords: ['juhu', 'juhu beach', 'mumbai'] },
+  { locality: 'Colaba', city: 'Mumbai', state: 'Maharashtra', country: 'India', latitude: 18.9067, longitude: 72.8147, displayName: 'Colaba, Mumbai, Maharashtra', keywords: ['colaba', 'causeway', 'south mumbai', 'mumbai'] },
+  { locality: 'Dadar', city: 'Mumbai', state: 'Maharashtra', country: 'India', latitude: 19.0178, longitude: 72.8478, displayName: 'Dadar, Mumbai, Maharashtra', keywords: ['dadar', 'shivaji park', 'mumbai'] },
+  { locality: 'Thane West', city: 'Thane', state: 'Maharashtra', country: 'India', latitude: 19.2183, longitude: 72.9781, displayName: 'Thane West, Maharashtra', keywords: ['thane', 'ghodbunder', 'mumbai'] },
+  // Delhi NCR
+  { locality: 'Connaught Place', city: 'New Delhi', state: 'Delhi', country: 'India', latitude: 28.6315, longitude: 77.2167, displayName: 'Connaught Place, New Delhi, Delhi', keywords: ['connaught place', 'cp', 'rajiv chowk', 'new delhi', 'delhi'] },
+  { locality: 'Hauz Khas', city: 'New Delhi', state: 'Delhi', country: 'India', latitude: 28.5494, longitude: 77.2001, displayName: 'Hauz Khas, New Delhi, Delhi', keywords: ['hauz khas', 'hkv', 'south delhi', 'delhi'] },
+  { locality: 'Saket', city: 'New Delhi', state: 'Delhi', country: 'India', latitude: 28.5244, longitude: 77.2180, displayName: 'Saket, New Delhi, Delhi', keywords: ['saket', 'select citywalk', 'south delhi', 'delhi'] },
+  { locality: 'Dwarka Sector 10', city: 'New Delhi', state: 'Delhi', country: 'India', latitude: 28.5823, longitude: 77.0500, displayName: 'Dwarka, New Delhi, Delhi', keywords: ['dwarka', 'west delhi', 'delhi'] },
+  { locality: 'Lajpat Nagar', city: 'New Delhi', state: 'Delhi', country: 'India', latitude: 28.5677, longitude: 77.2433, displayName: 'Lajpat Nagar, New Delhi, Delhi', keywords: ['lajpat nagar', 'central market', 'delhi'] },
+  { locality: 'Vasant Kunj', city: 'New Delhi', state: 'Delhi', country: 'India', latitude: 28.5284, longitude: 77.1558, displayName: 'Vasant Kunj, New Delhi, Delhi', keywords: ['vasant kunj', 'south delhi', 'delhi'] },
+  { locality: 'Sector 18', city: 'Noida', state: 'Uttar Pradesh', country: 'India', latitude: 28.5708, longitude: 77.3261, displayName: 'Sector 18, Noida, Uttar Pradesh', keywords: ['noida', 'sector 18', 'atta market', 'ncr'] },
+  { locality: 'Sector 62', city: 'Noida', state: 'Uttar Pradesh', country: 'India', latitude: 28.6258, longitude: 77.3686, displayName: 'Sector 62, Noida, Uttar Pradesh', keywords: ['sector 62', 'noida', 'ncr'] },
+  { locality: 'Cyber City', city: 'Gurugram', state: 'Haryana', country: 'India', latitude: 28.4950, longitude: 77.0895, displayName: 'Cyber City, DLF Phase 2, Gurugram, Haryana', keywords: ['cyber city', 'gurgaon', 'gurugram', 'dlf'] },
+  // Pune
+  { locality: 'Koregaon Park', city: 'Pune', state: 'Maharashtra', country: 'India', latitude: 18.5362, longitude: 73.8940, displayName: 'Koregaon Park, Pune, Maharashtra', keywords: ['koregaon park', 'kp', 'pune'] },
+  { locality: 'Kothrud', city: 'Pune', state: 'Maharashtra', country: 'India', latitude: 18.5074, longitude: 73.8077, displayName: 'Kothrud, Pune, Maharashtra', keywords: ['kothrud', 'pune'] },
+  { locality: 'Viman Nagar', city: 'Pune', state: 'Maharashtra', country: 'India', latitude: 18.5679, longitude: 73.9143, displayName: 'Viman Nagar, Pune, Maharashtra', keywords: ['viman nagar', 'phoenix marketcity', 'pune'] },
+  { locality: 'Hinjawadi', city: 'Pune', state: 'Maharashtra', country: 'India', latitude: 18.5913, longitude: 73.7389, displayName: 'Hinjawadi IT Park, Pune, Maharashtra', keywords: ['hinjawadi', 'hinjewadi', 'pune'] },
+  // Hyderabad
+  { locality: 'Banjara Hills', city: 'Hyderabad', state: 'Telangana', country: 'India', latitude: 17.4156, longitude: 78.4350, displayName: 'Banjara Hills, Hyderabad, Telangana', keywords: ['banjara hills', 'hyderabad'] },
+  { locality: 'Jubilee Hills', city: 'Hyderabad', state: 'Telangana', country: 'India', latitude: 17.4319, longitude: 78.4073, displayName: 'Jubilee Hills, Hyderabad, Telangana', keywords: ['jubilee hills', 'hyderabad'] },
+  { locality: 'Gachibowli', city: 'Hyderabad', state: 'Telangana', country: 'India', latitude: 17.4401, longitude: 78.3489, displayName: 'Gachibowli, Hyderabad, Telangana', keywords: ['gachibowli', 'financial district', 'hyderabad'] },
+  { locality: 'Hitec City', city: 'Hyderabad', state: 'Telangana', country: 'India', latitude: 17.4435, longitude: 78.3772, displayName: 'Hitec City, Madhapur, Hyderabad, Telangana', keywords: ['hitec city', 'madhapur', 'cyberabad', 'hyderabad'] },
+  // Chennai
+  { locality: 'Anna Nagar', city: 'Chennai', state: 'Tamil Nadu', country: 'India', latitude: 13.0850, longitude: 80.2101, displayName: 'Anna Nagar, Chennai, Tamil Nadu', keywords: ['anna nagar', 'chennai', 'madras'] },
+  { locality: 'T. Nagar', city: 'Chennai', state: 'Tamil Nadu', country: 'India', latitude: 13.0418, longitude: 80.2341, displayName: 'T. Nagar, Chennai, Tamil Nadu', keywords: ['t nagar', 'thyagaraya nagar', 'chennai'] },
+  { locality: 'Adyar', city: 'Chennai', state: 'Tamil Nadu', country: 'India', latitude: 13.0012, longitude: 80.2565, displayName: 'Adyar, Chennai, Tamil Nadu', keywords: ['adyar', 'chennai'] },
+  // Kolkata
+  { locality: 'Salt Lake (Bidhannagar)', city: 'Kolkata', state: 'West Bengal', country: 'India', latitude: 22.5804, longitude: 88.4172, displayName: 'Salt Lake, Bidhannagar, Kolkata, West Bengal', keywords: ['salt lake', 'bidhannagar', 'kolkata', 'calcutta'] },
+  { locality: 'Park Street', city: 'Kolkata', state: 'West Bengal', country: 'India', latitude: 22.5518, longitude: 88.3524, displayName: 'Park Street, Kolkata, West Bengal', keywords: ['park street', 'kolkata'] },
+  { locality: 'New Town', city: 'Kolkata', state: 'West Bengal', country: 'India', latitude: 22.5855, longitude: 88.4705, displayName: 'New Town, Rajarhat, Kolkata, West Bengal', keywords: ['new town', 'rajarhat', 'kolkata'] },
+];
+
+router.get('/geocode/search', async (req: Request, res: Response) => {
+  const queryStr = (req.query.q as string || '').trim().toLowerCase();
+  if (!queryStr || queryStr.length < 2) {
+    return res.json({ results: POPULAR_LOCALITIES.slice(0, 10) });
+  }
+
+  // 1. Search fast curated dictionary
+  const matchedCurated = POPULAR_LOCALITIES.filter((item) => {
+    return (
+      item.locality.toLowerCase().includes(queryStr) ||
+      item.city.toLowerCase().includes(queryStr) ||
+      item.displayName.toLowerCase().includes(queryStr) ||
+      item.keywords.some((k) => k.includes(queryStr) || queryStr.includes(k))
+    );
+  });
+
+  // 2. Fetch live upstream results from OpenStreetMap Nominatim
+  let upstreamResults: any[] = [];
+  try {
+    const encoded = encodeURIComponent(queryStr);
+    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encoded}&addressdetails=1&limit=6`;
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'KanyaKriti-App/1.0 (hyperlocal-community-app; contact@kanyakriti.org)',
+        'Accept-Language': 'en',
+      },
+      signal: AbortSignal.timeout(4000),
+    });
+
+    if (response.ok) {
+      const data: any[] = await response.json();
+      upstreamResults = data.map((item) => {
+        const addr = item.address || {};
+        const locality =
+          addr.suburb ||
+          addr.neighbourhood ||
+          addr.residential ||
+          addr.city_district ||
+          addr.quarter ||
+          addr.village ||
+          item.name ||
+          '';
+        const city =
+          addr.city ||
+          addr.town ||
+          addr.municipality ||
+          addr.county ||
+          addr.state_district ||
+          '';
+        const state = addr.state || '';
+        const country = addr.country || '';
+
+        return {
+          locality: locality || item.name || queryStr,
+          city: city || state || 'Local Area',
+          state,
+          country,
+          latitude: parseFloat(item.lat),
+          longitude: parseFloat(item.lon),
+          displayName: item.display_name,
+        };
+      });
+    }
+  } catch (err) {
+    // Graceful offline or timeout fallback to curated
+  }
+
+  // Combine and deduplicate
+  const combined = [...matchedCurated];
+  for (const up of upstreamResults) {
+    const isDup = combined.some(
+      (c) => Math.abs(c.latitude - up.latitude) < 0.01 && Math.abs(c.longitude - up.longitude) < 0.01
+    );
+    if (!isDup) {
+      combined.push(up);
+    }
+  }
+
+  return res.json({
+    results: combined.slice(0, 10),
   });
 });
 

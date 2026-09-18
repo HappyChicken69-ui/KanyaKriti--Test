@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import confetti from 'canvas-confetti';
 import {
   Sparkles,
@@ -114,9 +114,16 @@ export const ArtisanView: React.FC<ArtisanViewProps> = ({
   );
 
   // Shoppable listings of this artisan
-  const artisanListings = listings.filter(
-    (l) => l.artisanId === artisan.userId || l.artisanId === artisan.id
-  );
+  const artisanListings = useMemo(() => {
+    const seen = new Set<string>();
+    return listings.filter((l) => {
+      const belongs = l.artisanId === artisan.userId || l.artisanId === artisan.id;
+      if (!belongs) return false;
+      if (seen.has(l.id)) return false;
+      seen.add(l.id);
+      return true;
+    });
+  }, [listings, artisan.userId, artisan.id]);
 
   // Sample or recent orders for display
   const sampleRecentOrders = [

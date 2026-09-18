@@ -187,6 +187,29 @@ export interface GeneratedListing {
   searchKeywords: string[];
   suggestedTags: string[];
   artisanProfileSummary: string;
+  imageUrl?: string;
+}
+
+export interface AiShortlistInsight {
+  isShortlisted: boolean;
+  badge?: string;
+  reason: string;
+}
+
+export interface SearchIntent {
+  rawQuery: string;
+  cleanedQuery: string;
+  category?: string;
+  maxBudget?: number;
+  maxTurnaroundHours?: number;
+  wantsProximity: boolean;
+  intentSummary: string;
+}
+
+export interface SearchSuggestion {
+  text: string;
+  type: 'service' | 'category' | 'skill';
+  subtitle?: string;
 }
 
 export interface MatchScoreResult {
@@ -201,4 +224,5 @@ export interface MatchScoreResult {
     budgetFit: number; // 0 - 100
   };
   reasons: string[];
+  aiInsight?: AiShortlistInsight;
 }

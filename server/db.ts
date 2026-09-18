@@ -29,6 +29,14 @@ class DatabaseStore {
   public notifications: NotificationItem[] = [];
   private sseClients: Array<(data: string) => void> = [];
 
+  public activeLocation: {
+    latitude: number;
+    longitude: number;
+    locality: string;
+    city: string;
+    source: string;
+  } | null = null;
+
   constructor() {
     this.resetToSeed();
   }
@@ -37,9 +45,11 @@ class DatabaseStore {
     this.users = JSON.parse(JSON.stringify(INITIAL_USERS));
     this.artisanProfiles = JSON.parse(JSON.stringify(INITIAL_ARTISAN_PROFILES));
     this.listings = JSON.parse(JSON.stringify(INITIAL_LISTINGS));
+    this.deduplicateListings();
     this.orders = JSON.parse(JSON.stringify(INITIAL_ORDERS));
     this.transactions = JSON.parse(JSON.stringify(INITIAL_TRANSACTIONS));
     this.reviews = JSON.parse(JSON.stringify(INITIAL_REVIEWS));
+    this.activeLocation = null;
     this.notifications = [
       {
         id: 'notif-1',
@@ -131,10 +141,74 @@ class DatabaseStore {
     return this.listings.find((l) => l.id === id);
   }
 
+  public findDuplicateListing(artisanId: string, title: string, description?: string): Listing | undefined {
+    const normTitle = title.trim().toLowerCase();
+    const now = Date.now();
+    return this.listings.find((l) => {
+      if (l.artisanId !== artisanId) return false;
+      const lNormTitle = l.title.trim().toLowerCase();
+      if (lNormTitle !== normTitle) return false;
+
+      // Same artisan & same title:
+      // If description is supplied, check if identical
+      if (description && l.description.trim().toLowerCase() === description.trim().toLowerCase()) {
+        return true;
+      }
+      // Or if created very recently (within 120 seconds), treat as double-submission
+      const createdTime = new Date(l.createdAt).getTime();
+      if (!isNaN(createdTime) && now - createdTime < 120000) {
+        return true;
+      }
+      return false;
+    });
+  }
+
+  public deduplicateListings(): number {
+    const seen = new Map<string, Listing>();
+    const unique: Listing[] = [];
+    let removedCount = 0;
+
+    for (const listing of this.listings) {
+      const key = `${listing.artisanId}:::${listing.title.trim().toLowerCase()}`;
+      const existing = seen.get(key);
+
+      if (existing) {
+        // Safe deduplication: only remove if description is identical OR created within 120s of each other
+        const isDuplicateDesc =
+          listing.description.trim().toLowerCase() === existing.description.trim().toLowerCase();
+        const diffTime = Math.abs(
+          new Date(listing.createdAt).getTime() - new Date(existing.createdAt).getTime()
+        );
+        const isDuplicateTime = !isNaN(diffTime) && diffTime < 120000;
+
+        if (isDuplicateDesc || isDuplicateTime) {
+          removedCount++;
+          continue; // skip duplicate record
+        }
+      }
+
+      seen.set(key, listing);
+      unique.push(listing);
+    }
+
+    if (removedCount > 0) {
+      console.log(`[DatabaseStore] Cleaned up ${removedCount} duplicate listings safely.`);
+      this.listings = unique;
+    }
+    return removedCount;
+  }
+
   public addListing(listing: Omit<Listing, 'id' | 'createdAt' | 'ordersCompleted'>): Listing {
+    // Idempotency check: prevent duplicate listing for same artisan with same title/details
+    const existing = this.findDuplicateListing(listing.artisanId, listing.title, listing.description);
+    if (existing) {
+      console.log(`[DatabaseStore] Prevented duplicate addListing for "${listing.title}". Returning existing ID: ${existing.id}`);
+      return existing;
+    }
+
     const newListing: Listing = {
       ...listing,
-      id: `list-${Date.now()}`,
+      id: `list-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       ordersCompleted: 0,
       createdAt: new Date().toISOString(),
     };
@@ -197,8 +271,8 @@ class DatabaseStore {
       pickupLat: listing.approximateLat,
       pickupLng: listing.approximateLng,
       deliveryAddress: data.deliveryAddress || `${buyer.neighborhood}, ${buyer.city}`,
-      deliveryLat: buyer.lat || 12.9352,
-      deliveryLng: buyer.lng || 77.6245,
+      deliveryLat: buyer.lat ?? this.activeLocation?.latitude ?? 0,
+      deliveryLng: buyer.lng ?? this.activeLocation?.longitude ?? 0,
       instructions: data.instructions,
       timeline: [
         {
@@ -428,6 +502,105 @@ class DatabaseStore {
       runnerLng: lng,
     });
     return order;
+  }
+
+  // Authoritative dynamic active location synchronization
+  public setActiveLocation(loc: {
+    latitude: number;
+    longitude: number;
+    locality?: string;
+    city?: string;
+    source?: string;
+  }) {
+    const targetLat = loc.latitude;
+    const targetLng = loc.longitude;
+    const locality = (loc.locality || '').trim();
+    const city = (loc.city || '').trim() || 'Local Area';
+
+    this.activeLocation = {
+      latitude: targetLat,
+      longitude: targetLng,
+      locality: locality || 'Your Neighbourhood',
+      city: city,
+      source: loc.source || 'manual',
+    };
+
+    // Base seed origin from seed data
+    const BASE_LAT = 12.9352;
+    const BASE_LNG = 77.6245;
+
+    // Dynamically localize community listings around the user's active neighbourhood
+    for (const l of this.listings) {
+      if ((l as any).customPinned) continue;
+
+      const baseLat = (l as any).originalBaseLat ?? l.approximateLat;
+      const baseLng = (l as any).originalBaseLng ?? l.approximateLng;
+      if ((l as any).originalBaseLat === undefined) {
+        (l as any).originalBaseLat = baseLat;
+        (l as any).originalBaseLng = baseLng;
+      }
+
+      const deltaLat = baseLat - BASE_LAT;
+      const deltaLng = baseLng - BASE_LNG;
+
+      l.approximateLat = parseFloat((targetLat + deltaLat).toFixed(6));
+      l.approximateLng = parseFloat((targetLng + deltaLng).toFixed(6));
+      if (city) l.city = city;
+      if (locality) {
+        if (Math.abs(deltaLat) < 0.005 && Math.abs(deltaLng) < 0.005) {
+          l.neighborhood = locality;
+        } else {
+          l.neighborhood = `${locality} Extension`;
+        }
+      }
+    }
+
+    // Dynamically localize artisan profiles around the user's active neighbourhood
+    for (const ap of this.artisanProfiles) {
+      const baseLat = (ap as any).originalBaseLat ?? ap.approximateLat;
+      const baseLng = (ap as any).originalBaseLng ?? ap.approximateLng;
+      if ((ap as any).originalBaseLat === undefined) {
+        (ap as any).originalBaseLat = baseLat;
+        (ap as any).originalBaseLng = baseLng;
+      }
+
+      const deltaLat = baseLat - BASE_LAT;
+      const deltaLng = baseLng - BASE_LNG;
+
+      ap.approximateLat = parseFloat((targetLat + deltaLat).toFixed(6));
+      ap.approximateLng = parseFloat((targetLng + deltaLng).toFixed(6));
+      if (city) ap.city = city;
+      if (locality) {
+        if (Math.abs(deltaLat) < 0.005 && Math.abs(deltaLng) < 0.005) {
+          ap.neighborhood = locality;
+        } else {
+          ap.neighborhood = `${locality} Sector`;
+        }
+      }
+    }
+
+    // Dynamically localize users (buyers, runners)
+    for (const u of this.users) {
+      const baseLat = (u as any).originalBaseLat ?? u.lat;
+      const baseLng = (u as any).originalBaseLng ?? u.lng;
+      if ((u as any).originalBaseLat === undefined) {
+        (u as any).originalBaseLat = baseLat;
+        (u as any).originalBaseLng = baseLng;
+      }
+
+      const deltaLat = baseLat - BASE_LAT;
+      const deltaLng = baseLng - BASE_LNG;
+
+      u.lat = parseFloat((targetLat + deltaLat).toFixed(6));
+      u.lng = parseFloat((targetLng + deltaLng).toFixed(6));
+      if (city) u.city = city;
+      if (locality) u.neighborhood = locality;
+    }
+
+    this.broadcastEvent({
+      type: 'LOCATION_UPDATED',
+      activeLocation: this.activeLocation,
+    });
   }
 }
 

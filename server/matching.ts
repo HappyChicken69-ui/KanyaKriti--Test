@@ -29,27 +29,44 @@ export function computeDistanceScore(distanceKm: number): number {
   return Math.max(10, Math.round(100 - distanceKm * 4));
 }
 
+// Common local service synonyms for hyperlocal Indian context
+const SYNONYMS: Record<string, string[]> = {
+  blouse: ['alteration', 'fitting', 'stitching', 'tailor', 'silai', 'saree', 'fall', 'piko'],
+  alteration: ['blouse', 'fitting', 'stitch', 'tailor', 'shorten', 'tighten'],
+  tiffin: ['food', 'lunch', 'dinner', 'thali', 'cook', 'roti', 'meal', 'paratha', 'punjabi', 'meals'],
+  food: ['tiffin', 'cook', 'cooking', 'thali', 'paratha', 'snack', 'meals'],
+  mehendi: ['henna', 'bridal', 'arabic', 'cone', 'mandala', 'beauty'],
+  embroidery: ['aari', 'zari', 'zardozi', 'chikankari', 'kundan', 'needlework'],
+  crochet: ['knitted', 'woolens', 'woolen', 'baby', 'sweater'],
+  pottery: ['terracotta', 'clay', 'diya', 'diyas', 'planter'],
+  macrame: ['cotton', 'wall hanging', 'planter', 'tote', 'toran'],
+};
+
 export function computeSkillScore(
   query: string,
   categoryFilter: string | undefined,
   listing: Listing,
   artisan: ArtisanProfile
 ): number {
-  if (!query && !categoryFilter) return 85;
-
-  let score = 30;
   const q = (query || '').toLowerCase().trim();
   const cat = (categoryFilter || '').toLowerCase().trim();
 
+  if (!q && !cat) return 85;
+
+  let score = 25;
+
   // Category match
-  if (cat) {
+  if (cat && cat !== 'all') {
     if (listing.category.toLowerCase() === cat) {
-      score += 50;
+      score += 45;
     } else if (listing.customCategory && listing.customCategory.toLowerCase() === cat) {
-      score += 50;
+      score += 45;
     } else if (cat === 'other' && (listing.category.toLowerCase() === 'other' || !!listing.customCategory)) {
-      score += 50;
+      score += 45;
     }
+  } else if (!cat || cat === 'all') {
+    // If no category filter, start with neutral baseline
+    score += 15;
   }
 
   if (q) {
@@ -59,29 +76,44 @@ export function computeSkillScore(
     const customCatLower = (listing.customCategory || '').toLowerCase();
     const tagsLower = listing.tags.map((t) => t.toLowerCase()).join(' ');
     const skillsLower = artisan.skills.map((s) => s.toLowerCase()).join(' ');
+    const primarySkillLower = (artisan.primarySkill || '').toLowerCase();
+    const keywordsLower = (listing.searchKeywords || []).map((k) => k.toLowerCase()).join(' ');
 
-    if (titleLower.includes(q)) score += 40;
-    else if (descLower.includes(q)) score += 25;
+    const combinedSearchText = `${titleLower} ${descLower} ${catLower} ${customCatLower} ${tagsLower} ${skillsLower} ${primarySkillLower} ${keywordsLower}`;
 
-    if (catLower.includes(q) || customCatLower.includes(q)) score += 30;
-    if (tagsLower.includes(q) || skillsLower.includes(q)) score += 25;
+    // Direct exact phrase match
+    if (titleLower.includes(q)) score += 45;
+    else if (combinedSearchText.includes(q)) score += 35;
 
-    // Word-level token matching
-    const tokens = q.split(/\s+/).filter((w) => w.length > 2);
+    // Word-level token matching with synonym expansion
+    const tokens = q.split(/\s+/).filter((w) => w.length >= 2 && !['the', 'and', 'for', 'with', 'near', 'in'].includes(w));
     let matchedTokens = 0;
+
     for (const t of tokens) {
-      if (
-        titleLower.includes(t) ||
-        descLower.includes(t) ||
-        tagsLower.includes(t) ||
-        skillsLower.includes(t) ||
-        listing.searchKeywords.some((k) => k.toLowerCase().includes(t))
-      ) {
+      let tokenMatched = false;
+
+      // Direct match
+      if (combinedSearchText.includes(t)) {
+        tokenMatched = true;
+      } else {
+        // Synonym match
+        const syns = SYNONYMS[t] || [];
+        for (const s of syns) {
+          if (combinedSearchText.includes(s)) {
+            tokenMatched = true;
+            break;
+          }
+        }
+      }
+
+      if (tokenMatched) {
         matchedTokens++;
       }
     }
+
     if (tokens.length > 0) {
-      score += Math.min(30, (matchedTokens / tokens.length) * 30);
+      const matchRatio = matchedTokens / tokens.length;
+      score += Math.round(matchRatio * 40);
     }
   }
 

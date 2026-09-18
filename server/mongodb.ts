@@ -389,6 +389,9 @@ class MongoUserService {
 
       console.log('[MongoDB] Schema indexes verified across all 15 collections.');
 
+      // Safely deduplicate any existing redundant listings in MongoDB
+      await this.deduplicateMongoListings();
+
       // Check if collections are empty and seed them
       const userCount = await usersCol.countDocuments();
       if (userCount === 0) {
@@ -673,6 +676,63 @@ class MongoUserService {
 
     this.memoryRunnerProfiles.set(profile.user_id, newProfile);
     return newProfile;
+  }
+
+  // Listings Persistence & Deduplication
+  public async saveListing(listing: any): Promise<void> {
+    const doc = { ...listing, _id: listing.id };
+    if (this.db && this.status === 'LIVE_CONNECTED') {
+      try {
+        const listingsCol = this.db.collection('listings');
+        const existing = await listingsCol.findOne({
+          artisanId: listing.artisanId,
+          title: listing.title,
+        });
+        if (!existing) {
+          await listingsCol.insertOne(doc);
+        }
+      } catch (err: any) {
+        console.warn('[MongoDB] saveListing warning:', err?.message || err);
+      }
+    }
+    this.memoryListings.set(listing.id, doc);
+  }
+
+  public async deduplicateMongoListings(): Promise<number> {
+    if (!this.db || this.status !== 'LIVE_CONNECTED') return 0;
+    try {
+      const listingsCol = this.db.collection('listings');
+      const allListings = await listingsCol.find({}).toArray();
+      const seen = new Map<string, any>();
+      const duplicateIds: any[] = [];
+
+      for (const item of allListings) {
+        const key = `${item.artisanId}:::${(item.title || '').trim().toLowerCase()}`;
+        const existing = seen.get(key);
+        if (existing) {
+          const isDescMatch =
+            (item.description || '').trim().toLowerCase() ===
+            (existing.description || '').trim().toLowerCase();
+          const diffTime = Math.abs(
+            new Date(item.createdAt || 0).getTime() - new Date(existing.createdAt || 0).getTime()
+          );
+          if (isDescMatch || (!isNaN(diffTime) && diffTime < 120000)) {
+            duplicateIds.push(item._id);
+            continue;
+          }
+        }
+        seen.set(key, item);
+      }
+
+      if (duplicateIds.length > 0) {
+        await listingsCol.deleteMany({ _id: { $in: duplicateIds } as any });
+        console.log(`[MongoDB] Cleaned up ${duplicateIds.length} duplicate listing records from live database.`);
+      }
+      return duplicateIds.length;
+    } catch (err: any) {
+      console.warn('[MongoDB] deduplicateMongoListings warning:', err?.message || err);
+      return 0;
+    }
   }
 
   // Live Database accessors

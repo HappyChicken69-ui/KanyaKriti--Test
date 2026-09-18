@@ -9,6 +9,7 @@ import { Footer } from './components/Footer.tsx';
 import { VoiceArtisanModal } from './components/VoiceArtisanModal.tsx';
 import { DemoTourModal } from './components/DemoTourModal.tsx';
 import { AuthModal, AuthViewMode } from './components/AuthModal.tsx';
+import { NeighbourhoodModal } from './components/NeighbourhoodModal.tsx';
 import { User, ArtisanProfile, Listing, Order, NotificationItem } from './types.ts';
 import {
   fetchArtisans,
@@ -129,7 +130,16 @@ export function App() {
         fetchNotifications(),
       ]);
       setArtisans(artisanList);
-      setListings(listingList);
+
+      // Safe deduplication of listings on load
+      const uniqueListingsMap = new Map<string, Listing>();
+      for (const item of listingList) {
+        if (!uniqueListingsMap.has(item.id)) {
+          uniqueListingsMap.set(item.id, item);
+        }
+      }
+      setListings(Array.from(uniqueListingsMap.values()));
+
       setOrders(orderList);
       setNotifications(notifList);
     } catch (err) {
@@ -173,7 +183,10 @@ export function App() {
           setOrders((prev) => prev.map((o) => (o.id === payload.order.id ? payload.order : o)));
           showToast(`Order #${payload.order.id} status updated to ${payload.order.status}`);
         } else if (payload.type === 'NEW_LISTING') {
-          setListings((prev) => [payload.listing, ...prev]);
+          setListings((prev) => {
+            if (prev.some((l) => l.id === payload.listing.id)) return prev;
+            return [payload.listing, ...prev];
+          });
           showToast(`New artisan listing published: ${payload.listing.title}`);
         } else if (payload.type === 'NOTIFICATION') {
           setNotifications((prev) => [payload.notification, ...prev]);
@@ -192,6 +205,13 @@ export function App() {
       eventSource.close();
     };
   }, []);
+
+  // Reload listings and artisans when active location coordinates change
+  useEffect(() => {
+    if (geoLoc?.latitude && geoLoc?.longitude) {
+      loadAllData();
+    }
+  }, [geoLoc?.latitude, geoLoc?.longitude]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -526,7 +546,10 @@ export function App() {
         isOpen={isVoiceModalOpen}
         onClose={() => setIsVoiceModalOpen(false)}
         onListingPublished={(listing) => {
-          setListings((prev) => [listing, ...prev]);
+          setListings((prev) => {
+            if (prev.some((l) => l.id === listing.id)) return prev;
+            return [listing, ...prev];
+          });
           showToast('New shoppable listing published successfully!');
         }}
       />
@@ -547,6 +570,8 @@ export function App() {
           }
         }}
       />
+
+      <NeighbourhoodModal />
     </div>
   );
 }

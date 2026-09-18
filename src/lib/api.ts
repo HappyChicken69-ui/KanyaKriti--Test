@@ -8,6 +8,8 @@ import {
   GeneratedListing,
   MatchScoreResult,
   NotificationItem,
+  SearchSuggestion,
+  SearchIntent,
 } from '../types.ts';
 
 const AUTH_TOKEN_STORAGE_KEY = 'kanyakriti_jwt_token';
@@ -296,6 +298,17 @@ export async function generateListingAI(extracted: ExtractedSkillInfo, artisanNa
   return data;
 }
 
+export async function fetchSearchSuggestions(q: string): Promise<SearchSuggestion[]> {
+  try {
+    const res = await fetch(`/api/search/suggestions?q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    return data.suggestions || [];
+  } catch (err) {
+    console.error('Failed to fetch suggestions:', err);
+    return [];
+  }
+}
+
 export async function matchNearbyArtisans(params: {
   query?: string;
   category?: string;
@@ -303,7 +316,16 @@ export async function matchNearbyArtisans(params: {
   buyerLat?: number;
   buyerLng?: number;
   radiusKm?: number;
-}): Promise<{ matches: MatchScoreResult[]; criteria: any }> {
+  locality?: string;
+  city?: string;
+}): Promise<{
+  matches: MatchScoreResult[];
+  total: number;
+  parsedIntent?: SearchIntent;
+  shortlistSummary?: string;
+  isAiEnhanced?: boolean;
+  criteria: any;
+}> {
   const res = await fetch('/api/match', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

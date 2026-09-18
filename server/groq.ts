@@ -1,6 +1,7 @@
 import Groq, { toFile } from 'groq-sdk';
 import { z } from 'zod';
 import { ExtractedSkillInfo, GeneratedListing } from '../src/types.ts';
+import { resolveContextualListingImage } from './images.ts';
 
 // Environment variables configuration
 export const GROQ_CONFIG = {
@@ -69,6 +70,7 @@ export const GeneratedListingSchema = z.object({
   searchKeywords: z.array(z.string()).default([]),
   suggestedTags: z.array(z.string()).default([]),
   artisanProfileSummary: z.string().min(1),
+  imageUrl: z.string().optional(),
 });
 
 // ==========================================
@@ -155,6 +157,15 @@ export function fallbackGenerateListing(
   extracted: ExtractedSkillInfo,
   artisanName: string
 ): GeneratedListing {
+  const imageUrl = resolveContextualListingImage({
+    title: extracted.suggestedTitle,
+    category: extracted.category,
+    customCategory: extracted.customCategory,
+    description: extracted.description,
+    tags: extracted.suggestedTags,
+    searchKeywords: [extracted.skill.toLowerCase(), extracted.category.toLowerCase()],
+  });
+
   return {
     title: extracted.suggestedTitle || `${extracted.skill} – Local Maker`,
     shortDescription: `Authentic, reliable ${extracted.skill.toLowerCase()} crafted by ${artisanName}. High-quality finishing, punctual delivery, and personalized neighborhood service.`,
@@ -175,6 +186,7 @@ export function fallbackGenerateListing(
         ? extracted.suggestedTags
         : ['#LocalArtisan', '#Handmade', '#WomenMakers'],
     artisanProfileSummary: `Skilled artisan with proven local craftsmanship and dependable neighborhood customer service.`,
+    imageUrl,
   };
 }
 
@@ -365,7 +377,18 @@ Generate the complete marketplace listing JSON.`;
 
     const validated = GeneratedListingSchema.safeParse(parsed);
     if (validated.success) {
-      return validated.data;
+      const data = validated.data;
+      if (!data.imageUrl) {
+        data.imageUrl = resolveContextualListingImage({
+          title: data.title,
+          category: data.category,
+          customCategory: data.customCategory,
+          description: data.shortDescription,
+          tags: data.suggestedTags,
+          searchKeywords: data.searchKeywords,
+        });
+      }
+      return data;
     }
 
     console.warn('[Groq Listing] Schema validation failed on Attempt 1:', validated.error.flatten());
@@ -393,7 +416,18 @@ Generate the complete marketplace listing JSON.`;
     const retryValidated = GeneratedListingSchema.safeParse(retryParsed);
 
     if (retryValidated.success) {
-      return retryValidated.data;
+      const data = retryValidated.data;
+      if (!data.imageUrl) {
+        data.imageUrl = resolveContextualListingImage({
+          title: data.title,
+          category: data.category,
+          customCategory: data.customCategory,
+          description: data.shortDescription,
+          tags: data.suggestedTags,
+          searchKeywords: data.searchKeywords,
+        });
+      }
+      return data;
     }
 
     return fallbackGenerateListing(extracted, artisanName);

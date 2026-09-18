@@ -15,11 +15,13 @@ import {
   IndianRupee,
   Layers,
   Globe,
+  Loader2,
 } from 'lucide-react';
 import { ExtractedSkillInfo, GeneratedListing, Listing } from '../types.ts';
 import { extractSkillAI, generateListingAI, createListing, transcribeAudioAI } from '../lib/api.ts';
 import { useLanguage } from '../context/LanguageContext.tsx';
 import { getSpeechLanguageCode, ARTISAN_VOICE_QUOTES } from '../data/languages.ts';
+import { resolveContextualListingImage } from '../lib/images.ts';
 
 interface VoiceArtisanModalProps {
   artisanId: string;
@@ -66,6 +68,8 @@ export const VoiceArtisanModal: React.FC<VoiceArtisanModalProps> = ({
   const [customCategory, setCustomCategory] = useState('');
   const [editTurnaround, setEditTurnaround] = useState('Within 1 day');
   const [editTurnaroundHours, setEditTurnaroundHours] = useState(24);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const isPublishingRef = useRef(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -275,11 +279,25 @@ export const VoiceArtisanModal: React.FC<VoiceArtisanModalProps> = ({
   };
 
   const handlePublishListing = async () => {
+    if (isPublishingRef.current) return;
     if (!generatedListing && !extracted) return;
+
+    isPublishingRef.current = true;
+    setIsPublishing(true);
+    setErrorMsg(null);
 
     try {
       const finalCategory = generatedListing?.customCategory || (generatedListing?.category && generatedListing.category !== 'Other' ? generatedListing.category : (extracted?.customCategory || extracted?.category || 'Other'));
       const finalCustomCategory = extracted?.customCategory || (editCategory === 'Other' && customCategory.trim() ? customCategory.trim() : undefined);
+
+      const resolvedImage = generatedListing?.imageUrl || resolveContextualListingImage({
+        title: generatedListing ? generatedListing.title : extracted!.suggestedTitle,
+        category: finalCategory,
+        customCategory: finalCustomCategory,
+        description: generatedListing ? generatedListing.shortDescription : extracted!.description,
+        tags: generatedListing ? generatedListing.suggestedTags : extracted!.suggestedTags,
+        searchKeywords: generatedListing ? generatedListing.searchKeywords : [extracted!.skill.toLowerCase(), finalCategory.toLowerCase()],
+      });
 
       const payload = {
         artisanId,
@@ -292,13 +310,18 @@ export const VoiceArtisanModal: React.FC<VoiceArtisanModalProps> = ({
         turnaroundDisplay: generatedListing ? generatedListing.estimatedTurnaround : extracted!.turnaround_display,
         searchKeywords: generatedListing ? generatedListing.searchKeywords : [extracted!.skill.toLowerCase(), finalCategory.toLowerCase()],
         tags: generatedListing ? generatedListing.suggestedTags : extracted!.suggestedTags,
+        imageUrl: resolvedImage,
       };
 
       const published = await createListing(payload);
       onListingPublished(published);
       onClose();
     } catch (err: any) {
+      console.error('Listing publication error:', err);
       setErrorMsg(err.message || 'Failed to publish listing');
+    } finally {
+      setIsPublishing(false);
+      isPublishingRef.current = false;
     }
   };
 
@@ -721,72 +744,115 @@ export const VoiceArtisanModal: React.FC<VoiceArtisanModalProps> = ({
           )}
 
           {/* STEP 6: LISTING PREVIEW & APPROVAL */}
-          {step === 'LISTING_PREVIEW' && generatedListing && (
-            <div className="space-y-4">
-              <div className="text-center">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-[#86293D] bg-rose-50 border border-rose-200/80 px-2.5 py-0.5 rounded-full">
-                  {t('voice_listing_preview', 'AI Marketplace Listing')}
-                </span>
-                <h4 className="font-bold text-[#4A1525] text-lg mt-1 font-serif">{generatedListing.title}</h4>
-                <p className="text-stone-500 text-xs">Review how buyers will see your listing</p>
-              </div>
+          {step === 'LISTING_PREVIEW' && generatedListing && (() => {
+            const previewImageUrl =
+              generatedListing.imageUrl ||
+              resolveContextualListingImage({
+                title: generatedListing.title,
+                category:
+                  generatedListing.customCategory ||
+                  extracted?.customCategory ||
+                  generatedListing.category,
+                customCategory: generatedListing.customCategory || extracted?.customCategory,
+                description: generatedListing.shortDescription,
+                tags: generatedListing.suggestedTags,
+                searchKeywords: generatedListing.searchKeywords,
+              });
 
-              <div className="bg-white border border-rose-100 rounded-2xl p-4 space-y-3 shadow-2xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#86293D] bg-rose-50 border border-rose-200/80 px-2.5 py-1 rounded-full">
-                    {generatedListing.customCategory || extracted?.customCategory || generatedListing.category}
+            return (
+              <div className="space-y-4">
+                <div className="text-center">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#86293D] bg-rose-50 border border-rose-200/80 px-2.5 py-0.5 rounded-full">
+                    {t('voice_listing_preview', 'AI Marketplace Listing')}
                   </span>
-                  <span className="text-xl font-extrabold text-[#4A1525]">
-                    ₹{generatedListing.price}
-                  </span>
+                  <h4 className="font-bold text-[#4A1525] text-lg mt-1 font-serif">{generatedListing.title}</h4>
+                  <p className="text-stone-500 text-xs">Review how buyers will see your listing</p>
                 </div>
 
-                <p className="text-stone-700 text-xs leading-relaxed">
-                  {generatedListing.shortDescription}
-                </p>
+                <div className="bg-white border border-rose-100 rounded-2xl p-4 space-y-3 shadow-2xs">
+                  {/* Context-Aware Matched Craft Photograph */}
+                  <div className="relative w-full h-44 rounded-xl overflow-hidden border border-rose-100 bg-stone-100">
+                    <img
+                      src={previewImageUrl}
+                      alt={generatedListing.title}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute top-2 left-2 px-2.5 py-1 bg-black/70 backdrop-blur-xs text-white text-[10px] font-bold rounded-lg flex items-center gap-1.5 shadow-xs">
+                      <Sparkles className="w-3 h-3 text-amber-300" />
+                      <span>Context-Matched Craft Photo</span>
+                    </div>
+                    <div className="absolute top-2 right-2 bg-white/95 backdrop-blur-xs text-[#4A1525] border border-rose-200 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-2xs">
+                      {generatedListing.customCategory || extracted?.customCategory || generatedListing.category}
+                    </div>
+                  </div>
 
-                <div className="flex items-center gap-2 text-xs text-stone-600">
-                  <Clock className="w-3.5 h-3.5 text-stone-500" />
-                  <span>Turnaround: <strong>{generatedListing.estimatedTurnaround}</strong></span>
-                </div>
-
-                <div className="flex flex-wrap gap-1.5 pt-2">
-                  {generatedListing.suggestedTags.map((tag, idx) => (
-                    <span
-                      key={idx}
-                      className="text-[11px] bg-stone-100 text-stone-700 px-2 py-0.5 rounded-md font-medium border border-stone-200/60"
-                    >
-                      {tag}
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-[#86293D] bg-rose-50 border border-rose-200/80 px-2.5 py-1 rounded-full">
+                      {generatedListing.customCategory || extracted?.customCategory || generatedListing.category}
                     </span>
-                  ))}
+                    <span className="text-xl font-extrabold text-[#4A1525]">
+                      ₹{generatedListing.price}
+                    </span>
+                  </div>
+
+                  <p className="text-stone-700 text-xs leading-relaxed">
+                    {generatedListing.shortDescription}
+                  </p>
+
+                  <div className="flex items-center gap-2 text-xs text-stone-600">
+                    <Clock className="w-3.5 h-3.5 text-stone-500" />
+                    <span>Turnaround: <strong>{generatedListing.estimatedTurnaround}</strong></span>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 pt-2">
+                    {generatedListing.suggestedTags.map((tag, idx) => (
+                      <span
+                        key={idx}
+                        className="text-[11px] bg-stone-100 text-stone-700 px-2 py-0.5 rounded-md font-medium border border-stone-200/60"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className="p-2.5 bg-[#FAF7F5] rounded-xl border border-rose-100 text-[11px] text-stone-800">
+                    <span className="font-bold text-[#4A1525]">Artisan Summary: </span>
+                    {generatedListing.artisanProfileSummary}
+                  </div>
                 </div>
 
-                <div className="p-2.5 bg-[#FAF7F5] rounded-xl border border-rose-100 text-[11px] text-stone-800">
-                  <span className="font-bold text-[#4A1525]">Artisan Summary: </span>
-                  {generatedListing.artisanProfileSummary}
+                {/* Approval Buttons */}
+                <div className="flex items-center gap-3 pt-2">
+                  <button
+                    type="button"
+                    disabled={isPublishing}
+                    onClick={() => setStep('CONFIRM')}
+                    className="py-3 px-4 rounded-xl border border-stone-300 text-stone-700 font-bold text-sm hover:bg-stone-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isPublishing}
+                    onClick={handlePublishListing}
+                    className="flex-1 py-3 px-4 rounded-xl bg-[#C84B68] hover:bg-[#B33956] disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-sm shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    {isPublishing ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Publishing Listing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="w-4 h-4" />
+                        <span>{t('voice_publish_btn', 'Approve & Publish Listing')}</span>
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
-
-              {/* Approval Buttons */}
-              <div className="flex items-center gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setStep('CONFIRM')}
-                  className="py-3 px-4 rounded-xl border border-stone-300 text-stone-700 font-bold text-sm hover:bg-stone-50 transition-colors cursor-pointer"
-                >
-                  Back
-                </button>
-                <button
-                  type="button"
-                  onClick={handlePublishListing}
-                  className="flex-1 py-3 px-4 rounded-xl bg-[#C84B68] hover:bg-[#B33956] text-white font-bold text-sm shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <CheckCircle className="w-4 h-4" />
-                  {t('voice_publish_btn', 'Approve & Publish Listing')}
-                </button>
-              </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       </div>
     </div>,

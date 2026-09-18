@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import { Listing, ArtisanProfile } from '../types.ts';
+import { useCurrentLocation } from '../context/LocationContext.tsx';
 
 interface LeafletMapProps {
   centerLat?: number;
@@ -21,8 +22,8 @@ interface LeafletMapProps {
 }
 
 export const LeafletMap: React.FC<LeafletMapProps> = ({
-  centerLat = 12.9352,
-  centerLng = 77.6245,
+  centerLat,
+  centerLng,
   zoom = 13,
   radiusKm,
   listings = [],
@@ -36,6 +37,10 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
   onSelectListing,
   className = 'h-96 w-full rounded-2xl overflow-hidden shadow-inner',
 }) => {
+  const { location } = useCurrentLocation();
+  const effectiveLat = typeof centerLat === 'number' ? centerLat : (location?.latitude ?? 12.9352);
+  const effectiveLng = typeof centerLng === 'number' ? centerLng : (location?.longitude ?? 77.6245);
+
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const layerGroupRef = useRef<L.LayerGroup | null>(null);
@@ -45,7 +50,7 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
 
     if (!mapInstanceRef.current) {
       const map = L.map(mapContainerRef.current, {
-        center: [centerLat, centerLng],
+        center: [effectiveLat, effectiveLng],
         zoom,
         zoomControl: true,
         attributionControl: false,
@@ -74,12 +79,12 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
     }
   }, []);
 
-  // Update center if changes
+  // Update center if coordinates or zoom changes
   useEffect(() => {
     if (mapInstanceRef.current) {
-      mapInstanceRef.current.setView([centerLat, centerLng], zoom);
+      mapInstanceRef.current.setView([effectiveLat, effectiveLng], zoom);
     }
-  }, [centerLat, centerLng, zoom]);
+  }, [effectiveLat, effectiveLng, zoom]);
 
   // Redraw markers and shapes
   useEffect(() => {
@@ -92,11 +97,11 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
       className: 'custom-buyer-marker',
       html: `
         <div class="relative flex items-center justify-center">
-          <div class="w-8 h-8 rounded-full bg-blue-600 border-2 border-white shadow-lg flex items-center justify-center text-white text-xs font-bold ring-4 ring-blue-300/40">
+          <div class="w-8 h-8 rounded-full bg-[#86293D] border-2 border-white shadow-lg flex items-center justify-center text-white text-xs font-bold ring-4 ring-rose-300/50">
             <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
           </div>
           <div class="absolute -bottom-5 bg-stone-900 text-white text-[10px] font-semibold px-2 py-0.5 rounded shadow whitespace-nowrap">
-            You
+            ${location?.locality || 'Your Location'}
           </div>
         </div>
       `,
@@ -104,13 +109,13 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
       iconAnchor: [16, 16],
     });
 
-    L.marker([centerLat, centerLng], { icon: buyerIcon })
+    L.marker([effectiveLat, effectiveLng], { icon: buyerIcon })
       .addTo(layerGroupRef.current)
-      .bindPopup(`<b>Your Hyperlocal Center</b><br/>Approximate coordinates`);
+      .bindPopup(`<b>Your Active Location</b><br/>${location?.displayName || `${effectiveLat.toFixed(3)}°, ${effectiveLng.toFixed(3)}°`}`);
 
     // 2. Draw dynamic radius circle if specified
     if (radiusKm && radiusKm > 0) {
-      L.circle([centerLat, centerLng], {
+      L.circle([effectiveLat, effectiveLng], {
         radius: radiusKm * 1000,
         color: '#C84B68', // KanyaKriti rose
         fillColor: '#C84B68',
